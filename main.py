@@ -18,6 +18,16 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/", include_in_schema=False, name="home")
 def home(db: Annotated[Session, Depends(get_db)]):
     result = db.execute(select(models.User))
