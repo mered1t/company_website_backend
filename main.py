@@ -1,5 +1,7 @@
 from typing import Annotated
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi import FastAPI, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
