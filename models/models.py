@@ -24,8 +24,24 @@ class User(Base):
         default=None,
     )
 
+    clients: Mapped[list["Client"]] = relationship(back_populates="owner")
+
     @property
     def image_path(self) -> str:
         if self.image_file:
             return f"/media/profile_pics/{self.image_file}"
         return "/static/profile_pics/default.jpg"
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    birth_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    owner: Mapped["User"] = relationship(back_populates="clients")
