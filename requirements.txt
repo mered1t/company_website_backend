@@ -19,4 +19,4 @@ requests==2.34.2
 SQLAlchemy==2.0.52
 starlette==1.6.0
 uvicorn==0.52.3
-psycopg2-binary==26.0.1
+psycopg2-binary==2.9.12
