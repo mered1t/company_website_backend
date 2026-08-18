@@ -1,1 +1,1 @@
-from models.models import User, Client
+from models.models import User, Client, Service

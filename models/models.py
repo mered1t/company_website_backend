@@ -25,6 +25,7 @@ class User(Base):
     )
 
     clients: Mapped[list["Client"]] = relationship(back_populates="owner")
+    services: Mapped[list["Service"]] = relationship(back_populates="owner")
 
     @property
     def image_path(self) -> str:
@@ -45,3 +46,17 @@ class Client(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     owner: Mapped["User"] = relationship(back_populates="clients")
+
+class Service(Base):
+    __tablename__ = "services"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    owner: Mapped["User"] = relationship(back_populates="services")

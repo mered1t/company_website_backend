@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import get_current_user
+from auth.auth import CurrentUser
 from db.database import get_db
 from schemas.schemas import ClientCreate, ClientPublic, ClientUpdate
 
@@ -17,7 +17,7 @@ router = APIRouter()
 async def create_client(
     client: ClientCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)],
+    current_user: CurrentUser,
 ):
     new_client = models.Client(
         owner_id=current_user.id,
@@ -32,7 +32,7 @@ async def create_client(
 @router.get("", response_model=list[ClientPublic])
 async def list_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)],
+    current_user: CurrentUser,
 ):
     result = await db.execute(
         select(models.Client).where(models.Client.owner_id == current_user.id),
@@ -44,7 +44,7 @@ async def list_clients(
 async def get_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)],
+    current_user: CurrentUser,
 ):
     result = await db.execute(
         select(models.Client).where(
@@ -63,7 +63,7 @@ async def update_client(
     client_id: int,
     client_update: ClientUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)],
+    current_user: CurrentUser,
 ):
     result = await db.execute(
         select(models.Client).where(
@@ -88,7 +88,7 @@ async def update_client(
 async def delete_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)],
+    current_user: CurrentUser,
 ):
     result = await db.execute(
         select(models.Client).where(

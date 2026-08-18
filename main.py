@@ -1,19 +1,13 @@
-from typing import Annotated
-
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi import FastAPI, Depends
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextlib import asynccontextmanager
 
-from db.database import Base, engine, get_db
-from models import models
-from routers import users, clients
+from db.database import Base, engine
+from routers import users, clients, services
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -31,6 +25,7 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(clients.router, prefix="/api/clients", tags=["clients"])
+app.include_router(services.router, prefix="/api/services", tags=["services"])
 
 app.add_middleware(
     CORSMiddleware,

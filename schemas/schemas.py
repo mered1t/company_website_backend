@@ -60,3 +60,30 @@ class ClientPublic(ClientBase):
 
     id: int
     created_at: datetime
+
+
+class ServiceBase(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    price: int = Field(ge=0)
+    duration_minutes: int = Field(gt=0)
+    description: str | None = None
+    photo: str | None = None
+
+
+class ServiceCreate(ServiceBase):
+    pass
+
+
+class ServiceUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    price: int | None = Field(default=None, ge=0)
+    duration_minutes: int | None = Field(default=None, gt=0)
+    description: str | None = None
+    photo: str | None = None
+
+
+class ServicePublic(ServiceBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
