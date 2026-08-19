@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import models
 from db.database import Base, engine
+from models import masters
 from routers import users, clients, services
 
 
@@ -27,6 +28,7 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(clients.router, prefix="/api/clients", tags=["clients"])
 app.include_router(services.router, prefix="/api/services", tags=["services"])
+app.include_router(masters.router, prefix="/api/masters", tags=["masters"])
 
 app.add_middleware(
     CORSMiddleware,

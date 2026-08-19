@@ -87,3 +87,39 @@ class ServicePublic(ServiceBase):
 
     id: int
     created_at: datetime
+
+
+class WorkingHoursBase(BaseModel):
+    day_of_week: int = Field(ge=0, le=6)
+    start_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    end_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+class WorkingHoursPublic(WorkingHoursBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class MasterBase(BaseModel):
+    full_name: str = Field(min_length=1, max_length=150)
+    phone: str | None = None
+    photo: str | None = None
+
+
+class MasterCreate(MasterBase):
+    working_hours: list[WorkingHoursBase] = []
+
+
+class MasterUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    phone: str | None = None
+    photo: str | None = None
+
+
+class MasterPublic(MasterBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    working_hours: list[WorkingHoursPublic] = []

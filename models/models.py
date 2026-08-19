@@ -26,6 +26,8 @@ class User(Base):
 
     clients: Mapped[list["Client"]] = relationship(back_populates="owner")
     services: Mapped[list["Service"]] = relationship(back_populates="owner")
+    masters: Mapped[list["Master"]] = relationship(back_populates="owner")
+    appointments: Mapped[list["Appointment"]] = relationship(back_populates="owner")
 
     @property
     def image_path(self) -> str:
@@ -46,6 +48,7 @@ class Client(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     owner: Mapped["User"] = relationship(back_populates="clients")
+    appointments: Mapped[list["Appointment"]] = relationship(back_populates="client")
 
 class Service(Base):
     __tablename__ = "services"
@@ -60,3 +63,49 @@ class Service(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     owner: Mapped["User"] = relationship(back_populates="services")
+
+class Master(Base):
+    __tablename__ = "masters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    owner: Mapped["User"] = relationship(back_populates="masters")
+    working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
+    appointments: Mapped[list["Appointment"]] = relationship(back_populates="master")
+
+
+class WorkingHours(Base):
+    __tablename__ = "working_hours"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)  # 0 = monday, 6 = sunday
+    start_time: Mapped[str] = mapped_column(String(5), nullable=False)  # "09:00"
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)    # "18:00"
+
+    master: Mapped["Master"] = relationship(back_populates="working_hours")
+
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    owner: Mapped["User"] = relationship(back_populates="appointments")
+    client: Mapped["Client"] = relationship(back_populates="appointments")
+    service: Mapped["Service"] = relationship()
+    master: Mapped["Master"] = relationship(back_populates="appointments")

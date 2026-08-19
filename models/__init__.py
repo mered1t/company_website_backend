@@ -1,1 +1,1 @@
-from models.models import User, Client, Service
+from models.models import User, Client, Service, Master, WorkingHours, Appointment
