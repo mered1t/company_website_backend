@@ -5,6 +5,7 @@ from starlette.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
+import models
 from db.database import Base, engine
 from routers import users, clients, services
 
@@ -14,9 +15,9 @@ async def lifespan(_app: FastAPI):
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        yield
-        # Shutdown
-        await engine.dispose()
+    yield
+    # Shutdown
+    await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
 
