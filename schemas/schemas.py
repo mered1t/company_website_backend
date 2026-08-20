@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class UserBase(BaseModel):
@@ -35,6 +35,8 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+
+
 class ClientBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=150)
     phone: str = Field(min_length=5, max_length=20)
@@ -60,6 +62,7 @@ class ClientPublic(ClientBase):
 
     id: int
     created_at: datetime
+
 
 
 class ServiceBase(BaseModel):
@@ -89,16 +92,26 @@ class ServicePublic(ServiceBase):
     created_at: datetime
 
 
-class WorkingHoursBase(BaseModel):
+
+class WorkingHoursFields(BaseModel):
     day_of_week: int = Field(ge=0, le=6)
     start_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
     end_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
-class WorkingHoursPublic(WorkingHoursBase):
+class WorkingHoursBase(WorkingHoursFields):
+    @model_validator(mode="after")
+    def check_time_order(self) -> "WorkingHoursBase":
+        if self.start_time >= self.end_time:
+            raise ValueError("start_time must be earlier than end_time")
+        return self
+
+
+class WorkingHoursPublic(WorkingHoursFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
 
 
 class MasterBase(BaseModel):
@@ -123,3 +136,34 @@ class MasterPublic(MasterBase):
     id: int
     created_at: datetime
     working_hours: list[WorkingHoursPublic] = []
+
+
+
+class AppointmentBase(BaseModel):
+    client_id: int
+    service_id: int
+    master_id: int
+    start_time: datetime
+    notes: str | None = None
+
+
+class AppointmentCreate(AppointmentBase):
+    pass
+
+
+class AppointmentUpdate(BaseModel):
+    client_id: int | None = None
+    service_id: int | None = None
+    master_id: int | None = None
+    start_time: datetime | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
+class AppointmentPublic(AppointmentBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    end_time: datetime
+    status: str
+    created_at: datetime
