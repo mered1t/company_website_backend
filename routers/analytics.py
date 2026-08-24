@@ -94,3 +94,67 @@ async def get_inactive_clients(
         {"client_id": r.id, "full_name": r.full_name, "last_visit": r.last_visit}
         for r in rows
     ]
+
+
+@router.get("/popular-services")
+async def get_popular_services(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    limit: int = 10,
+):
+    result = await db.execute(
+        select(
+            models.Service.id,
+            models.Service.name,
+            func.count(models.Appointment.id).label("times_booked"),
+            func.coalesce(func.sum(models.Service.price), 0).label("total_revenue"),
+        )
+        .select_from(models.Service)
+        .join(models.Appointment, models.Appointment.service_id == models.Service.id)
+        .where(
+            models.Service.owner_id == current_user.id,
+            models.Appointment.status == "completed",
+        )
+        .group_by(models.Service.id, models.Service.name)
+        .order_by(func.count(models.Appointment.id).desc())
+        .limit(limit),
+    )
+    rows = result.all()
+    return [
+        {"service_id": r.id, "name": r.name, "times_booked": r.times_booked, "total_revenue": r.total_revenue}
+        for r in rows
+    ]
+
+
+@router.get("/masters-workload")
+async def get_masters_workload(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    date_from: dt,
+    date_to: dt,
+):
+    result = await db.execute(
+        select(
+            models.Master.id,
+            models.Master.full_name,
+            func.count(models.Appointment.id).label("appointments_count"),
+            func.coalesce(func.sum(models.Service.price), 0).label("total_revenue"),
+        )
+        .select_from(models.Master)
+        .outerjoin(
+            models.Appointment,
+            (models.Appointment.master_id == models.Master.id)
+            & (models.Appointment.status == "completed")
+            & (models.Appointment.start_time >= date_from)
+            & (models.Appointment.start_time <= date_to),
+        )
+        .outerjoin(models.Service, models.Appointment.service_id == models.Service.id)
+        .where(models.Master.owner_id == current_user.id)
+        .group_by(models.Master.id, models.Master.full_name)
+        .order_by(func.sum(models.Service.price).desc().nulls_last()),
+    )
+    rows = result.all()
+    return [
+        {"master_id": r.id, "full_name": r.full_name, "appointments_count": r.appointments_count, "total_revenue": r.total_revenue}
+        for r in rows
+    ]
