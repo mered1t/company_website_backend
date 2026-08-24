@@ -1,13 +1,16 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 import models
 from auth.auth import CurrentUser
 from db.database import get_db
-from schemas.schemas import ClientCreate, ClientPublic, ClientUpdate
+from schemas.schemas import ClientCreate, ClientPublic, ClientUpdate, AppointmentPublic
+from common import get_owned
 
 router = APIRouter()
 
@@ -102,3 +105,22 @@ async def delete_client(
 
     await db.delete(client)
     await db.commit()
+
+
+@router.get("/{client_id}/appointments", response_model=list[AppointmentPublic])
+async def get_client_appointments(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    await get_owned(db, models.Client, client_id, current_user.id, "Client")
+
+    result = await db.execute(
+        select(models.Appointment)
+        .where(
+            models.Appointment.client_id == client_id,
+            models.Appointment.owner_id == current_user.id,
+        )
+        .order_by(models.Appointment.start_time.desc()),
+    )
+    return result.scalars().all()

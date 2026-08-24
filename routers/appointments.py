@@ -1,4 +1,6 @@
 from datetime import timedelta
+from datetime import datetime as dt
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,22 +8,12 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
+from common import get_owned
 from auth.auth import CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate
 
 router = APIRouter()
-
-
-async def _get_owned(db: AsyncSession, model, obj_id: int, owner_id: int, name: str):
-    result = await db.execute(
-        select(model).where(model.id == obj_id, model.owner_id == owner_id),
-    )
-    obj = result.scalars().first()
-    if not obj:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{name} not found")
-    return obj
-
 
 async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
     day_of_week = start_time.weekday()  # 0 = понедельник ... 6 = воскресенье
@@ -71,11 +63,11 @@ async def create_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    await _get_owned(db, models.Client, appointment.client_id, current_user.id, "Client")
-    service = await _get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
-    await _get_owned(db, models.Master, appointment.master_id, current_user.id, "Master")
+    await get_owned(db, models.Client, appointment.client_id, current_user.id, "Client")
+    service = await get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
+    await get_owned(db, models.Master, appointment.master_id, current_user.id, "Master")
 
-    start_time = appointment.start_time
+    start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
     await _check_working_hours(db, appointment.master_id, start_time, end_time)
@@ -107,13 +99,34 @@ async def list_appointments(
     return result.scalars().all()
 
 
+@router.get("/calendar", response_model=list[AppointmentPublic])
+async def get_calendar(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    date_from: dt,
+    date_to: dt,
+    master_id: int | None = None,
+):
+    query = select(models.Appointment).where(
+        models.Appointment.owner_id == current_user.id,
+        models.Appointment.start_time >= date_from,
+        models.Appointment.start_time <= date_to,
+    )
+    if master_id is not None:
+        query = query.where(models.Appointment.master_id == master_id)
+
+    query = query.order_by(models.Appointment.start_time)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
 @router.get("/{appointment_id}", response_model=AppointmentPublic)
 async def get_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    return await _get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    return await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentPublic)
@@ -123,7 +136,7 @@ async def update_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    appointment = await _get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    appointment = await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
     update_data = appointment_update.model_dump(exclude_unset=True)
 
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
@@ -131,8 +144,11 @@ async def update_appointment(
     for field, value in update_data.items():
         setattr(appointment, field, value)
 
+    if appointment.start_time.tzinfo is not None:
+        appointment.start_time = appointment.start_time.replace(tzinfo=None)
+
     if recheck_needed:
-        service = await _get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
+        service = await get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
         appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
         await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
         await _check_overlap(db, appointment.master_id, appointment.start_time, appointment.end_time, exclude_id=appointment.id)
@@ -148,6 +164,6 @@ async def delete_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    appointment = await _get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    appointment = await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
     await db.delete(appointment)
     await db.commit()
