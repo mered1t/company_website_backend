@@ -109,3 +109,15 @@ class Appointment(Base):
     client: Mapped["Client"] = relationship(back_populates="appointments")
     service: Mapped["Service"] = relationship()
     master: Mapped["Master"] = relationship(back_populates="appointments")
+
+    @property
+    def service_name(self) -> str:
+        return self.service.name
+
+    @property
+    def service_price(self) -> int:
+        return self.service.price
+
+    @property
+    def master_name(self) -> str:
+        return self.master.full_name

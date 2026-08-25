@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 import models
 from auth.auth import CurrentUser
 from db.database import get_db
-from schemas.schemas import ClientCreate, ClientPublic, ClientUpdate, AppointmentPublic
+from schemas.schemas import ClientCreate, ClientPublic, ClientUpdate, AppointmentPublic, AppointmentWithDetails
 from common import get_owned
 
 router = APIRouter()
@@ -107,20 +107,26 @@ async def delete_client(
     await db.commit()
 
 
-@router.get("/{client_id}/appointments", response_model=list[AppointmentPublic])
+@router.get("/{client_id}/appointments", response_model=list[AppointmentWithDetails])
 async def get_client_appointments(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
+    status_filter: str | None = None,
 ):
     await get_owned(db, models.Client, client_id, current_user.id, "Client")
 
-    result = await db.execute(
+    query = (
         select(models.Appointment)
+        .options(selectinload(models.Appointment.service), selectinload(models.Appointment.master))
         .where(
             models.Appointment.client_id == client_id,
             models.Appointment.owner_id == current_user.id,
         )
-        .order_by(models.Appointment.start_time.desc()),
     )
+    if status_filter is not None:
+        query = query.where(models.Appointment.status == status_filter)
+
+    query = query.order_by(models.Appointment.start_time.desc())
+    result = await db.execute(query)
     return result.scalars().all()
