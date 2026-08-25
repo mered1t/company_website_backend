@@ -171,6 +171,7 @@ class AppointmentPublic(AppointmentBase):
 class AppointmentWithDetails(AppointmentPublic):
     model_config = ConfigDict(from_attributes=True)
 
+    client_name: str
     service_name: str
     service_price: int
     master_name: str

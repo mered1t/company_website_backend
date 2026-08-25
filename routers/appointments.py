@@ -4,14 +4,15 @@ from datetime import datetime as dt
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, and_
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from common import get_owned
 from auth.auth import CurrentUser
 from db.database import get_db
-from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate
+from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
 router = APIRouter()
 
@@ -99,7 +100,7 @@ async def list_appointments(
     return result.scalars().all()
 
 
-@router.get("/calendar", response_model=list[AppointmentPublic])
+@router.get("/calendar", response_model=list[AppointmentWithDetails])
 async def get_calendar(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
@@ -107,10 +108,18 @@ async def get_calendar(
     date_to: dt,
     master_id: int | None = None,
 ):
-    query = select(models.Appointment).where(
-        models.Appointment.owner_id == current_user.id,
-        models.Appointment.start_time >= date_from,
-        models.Appointment.start_time <= date_to,
+    query = (
+        select(models.Appointment)
+        .options(
+            selectinload(models.Appointment.client),
+            selectinload(models.Appointment.service),
+            selectinload(models.Appointment.master),
+        )
+        .where(
+            models.Appointment.owner_id == current_user.id,
+            models.Appointment.start_time >= date_from,
+            models.Appointment.start_time <= date_to,
+        )
     )
     if master_id is not None:
         query = query.where(models.Appointment.master_id == master_id)

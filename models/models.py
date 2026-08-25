@@ -121,3 +121,7 @@ class Appointment(Base):
     @property
     def master_name(self) -> str:
         return self.master.full_name
+
+    @property
+    def client_name(self) -> str:
+        return self.client.full_name
