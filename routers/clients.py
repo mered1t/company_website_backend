@@ -118,12 +118,17 @@ async def get_client_appointments(
 
     query = (
         select(models.Appointment)
-        .options(selectinload(models.Appointment.service), selectinload(models.Appointment.master))
+        .options(
+            selectinload(models.Appointment.client),
+            selectinload(models.Appointment.service),
+            selectinload(models.Appointment.master),
+        )
         .where(
             models.Appointment.client_id == client_id,
             models.Appointment.owner_id == current_user.id,
         )
     )
+    
     if status_filter is not None:
         query = query.where(models.Appointment.status == status_filter)
 
