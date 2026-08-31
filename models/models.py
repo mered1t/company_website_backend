@@ -95,7 +95,7 @@ class Appointment(Base):
     __tablename__ = "appointments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False, index=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
@@ -105,7 +105,7 @@ class Appointment(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
-    owner: Mapped["User"] = relationship()
+    organization: Mapped["Organization"] = relationship(back_populates="appointments")
     client: Mapped["Client"] = relationship(back_populates="appointments")
     service: Mapped["Service"] = relationship()
     master: Mapped["Master"] = relationship()
@@ -145,6 +145,7 @@ class Organization(Base):
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")
     services: Mapped[list["Service"]] = relationship(back_populates="organization")
     masters: Mapped[list["Master"]] = relationship(back_populates="organization")
+    appointments: Mapped[list["Appointment"]] = relationship(back_populates="organization")
 
 
 class Membership(Base):

@@ -1,6 +1,5 @@
 from datetime import timedelta
 from datetime import datetime as dt
-
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,14 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from common import get_owned
-from auth.auth import CurrentUser
+from auth.auth import CurrentMembership
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
 router = APIRouter()
 
+
 async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
-    day_of_week = start_time.weekday()  # 0 = понедельник ... 6 = воскресенье
+    day_of_week = start_time.weekday()
     result = await db.execute(
         select(models.WorkingHours).where(
             models.WorkingHours.master_id == master_id,
@@ -26,18 +26,12 @@ async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end
     )
     working_hours = result.scalars().first()
     if not working_hours:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Master does not work on this day",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master does not work on this day")
 
     start_str = start_time.strftime("%H:%M")
     end_str = end_time.strftime("%H:%M")
     if start_str < working_hours.start_time or end_str > working_hours.end_time:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Appointment time is outside master's working hours",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment time is outside master's working hours")
 
 
 async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time, exclude_id: int | None = None):
@@ -52,21 +46,18 @@ async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time,
 
     result = await db.execute(query)
     if result.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Master already has an appointment at this time",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master already has an appointment at this time")
 
 
 @router.post("", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     appointment: AppointmentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
-    await get_owned(db, models.Client, appointment.client_id, current_user.id, "Client")
-    service = await get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
-    await get_owned(db, models.Master, appointment.master_id, current_user.id, "Master")
+    await get_owned(db, models.Client, appointment.client_id, membership.organization_id, "Client")
+    service = await get_owned(db, models.Service, appointment.service_id, membership.organization_id, "Service")
+    await get_owned(db, models.Master, appointment.master_id, membership.organization_id, "Master")
 
     start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
@@ -75,7 +66,7 @@ async def create_appointment(
     await _check_overlap(db, appointment.master_id, start_time, end_time)
 
     new_appointment = models.Appointment(
-        owner_id=current_user.id,
+        organization_id=membership.organization_id,
         client_id=appointment.client_id,
         service_id=appointment.service_id,
         master_id=appointment.master_id,
@@ -92,10 +83,10 @@ async def create_appointment(
 @router.get("", response_model=list[AppointmentPublic])
 async def list_appointments(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
-        select(models.Appointment).where(models.Appointment.owner_id == current_user.id),
+        select(models.Appointment).where(models.Appointment.organization_id == membership.organization_id),
     )
     return result.scalars().all()
 
@@ -103,7 +94,7 @@ async def list_appointments(
 @router.get("/calendar", response_model=list[AppointmentWithDetails])
 async def get_calendar(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     date_from: dt,
     date_to: dt,
     master_id: int | None = None,
@@ -116,7 +107,7 @@ async def get_calendar(
             selectinload(models.Appointment.master),
         )
         .where(
-            models.Appointment.owner_id == current_user.id,
+            models.Appointment.organization_id == membership.organization_id,
             models.Appointment.start_time >= date_from,
             models.Appointment.start_time <= date_to,
         )
@@ -133,9 +124,9 @@ async def get_calendar(
 async def get_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
-    return await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    return await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentPublic)
@@ -143,9 +134,9 @@ async def update_appointment(
     appointment_id: int,
     appointment_update: AppointmentUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
-    appointment = await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
     update_data = appointment_update.model_dump(exclude_unset=True)
 
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
@@ -157,7 +148,7 @@ async def update_appointment(
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
 
     if recheck_needed:
-        service = await get_owned(db, models.Service, appointment.service_id, current_user.id, "Service")
+        service = await get_owned(db, models.Service, appointment.service_id, membership.organization_id, "Service")
         appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
         await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
         await _check_overlap(db, appointment.master_id, appointment.start_time, appointment.end_time, exclude_id=appointment.id)
@@ -171,8 +162,8 @@ async def update_appointment(
 async def delete_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
-    appointment = await get_owned(db, models.Appointment, appointment_id, current_user.id, "Appointment")
+    appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
     await db.delete(appointment)
     await db.commit()
