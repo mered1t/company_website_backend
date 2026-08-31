@@ -10,6 +10,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8)
+    organization_name: str | None = None
 
 
 class UserPublic(BaseModel):

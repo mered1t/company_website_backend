@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_db
+from models import Membership
 import models
 
 password_hash = PasswordHash.recommended()
@@ -93,3 +94,26 @@ async def get_current_user(
     return user
 
 CurrentUser = Annotated[models.User, Depends(get_current_user)]
+
+
+async def get_current_membership(
+    organization_id: int,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Membership:
+    result = await db.execute(
+        select(Membership).where(
+            Membership.user_id == current_user.id,
+            Membership.organization_id == organization_id,
+        ),
+    )
+    membership = result.scalars().first()
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this organization",
+        )
+    return membership
+
+
+CurrentMembership = Annotated[Membership, Depends(get_current_membership)]

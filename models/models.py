@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
+
+import re
+from enum import Enum
 
 class User(Base):
     __tablename__ = "users"
@@ -28,6 +31,7 @@ class User(Base):
     services: Mapped[list["Service"]] = relationship(back_populates="owner")
     masters: Mapped[list["Master"]] = relationship(back_populates="owner")
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="owner")
+    memberships: Mapped[list["Membership"]] = relationship(back_populates="user")
 
     @property
     def image_path(self) -> str:
@@ -125,3 +129,33 @@ class Appointment(Base):
     @property
     def client_name(self) -> str:
         return self.client.full_name
+
+class MembershipRole(str, Enum):
+    owner = "owner"
+    admin = "admin"
+    master = "master"
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (UniqueConstraint("user_id", "organization_id", name="uq_user_organization"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    role: Mapped[MembershipRole] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    user: Mapped["User"] = relationship(back_populates="memberships")
+    organization: Mapped["Organization"] = relationship(back_populates="memberships")
