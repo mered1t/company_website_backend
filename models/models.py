@@ -27,7 +27,6 @@ class User(Base):
         default=None,
     )
 
-    services: Mapped[list["Service"]] = relationship(back_populates="owner")
     masters: Mapped[list["Master"]] = relationship(back_populates="owner")
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="owner")
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user")
@@ -57,7 +56,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -65,7 +64,7 @@ class Service(Base):
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
-    owner: Mapped["User"] = relationship(back_populates="services")
+    organization: Mapped["Organization"] = relationship(back_populates="services")
 
 class Master(Base):
     __tablename__ = "masters"
@@ -145,6 +144,7 @@ class Organization(Base):
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")
+    services: Mapped[list["Service"]] = relationship(back_populates="organization")
 
 
 class Membership(Base):
