@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentUser
+from auth.auth import CurrentMembership
 from db.database import get_db
 
 router = APIRouter()
@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/revenue")
 async def get_revenue(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     date_from: dt,
     date_to: dt,
 ):
@@ -24,7 +24,7 @@ async def get_revenue(
         .select_from(models.Appointment)
         .join(models.Service, models.Appointment.service_id == models.Service.id)
         .where(
-            models.Appointment.owner_id == current_user.id,
+            models.Appointment.organization_id == membership.organization_id,
             models.Appointment.status == "completed",
             models.Appointment.start_time >= date_from,
             models.Appointment.start_time <= date_to,
@@ -37,7 +37,7 @@ async def get_revenue(
 @router.get("/top-clients")
 async def get_top_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     limit: int = 10,
 ):
     result = await db.execute(
@@ -51,7 +51,7 @@ async def get_top_clients(
         .join(models.Appointment, models.Appointment.client_id == models.Client.id)
         .join(models.Service, models.Appointment.service_id == models.Service.id)
         .where(
-            models.Client.owner_id == current_user.id,
+            models.Client.organization_id == membership.organization_id,
             models.Appointment.status == "completed",
         )
         .group_by(models.Client.id, models.Client.full_name)
@@ -68,7 +68,7 @@ async def get_top_clients(
 @router.get("/inactive-clients")
 async def get_inactive_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     days: int = 30,
 ):
     cutoff = dt.now() - timedelta(days=days)
@@ -85,7 +85,7 @@ async def get_inactive_clients(
             (models.Appointment.client_id == models.Client.id)
             & (models.Appointment.status == "completed"),
         )
-        .where(models.Client.owner_id == current_user.id)
+        .where(models.Client.organization_id == membership.organization_id)
         .group_by(models.Client.id, models.Client.full_name)
         .having((func.max(models.Appointment.start_time) < cutoff) | (func.max(models.Appointment.start_time).is_(None))),
     )
@@ -99,7 +99,7 @@ async def get_inactive_clients(
 @router.get("/popular-services")
 async def get_popular_services(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     limit: int = 10,
 ):
     result = await db.execute(
@@ -112,7 +112,7 @@ async def get_popular_services(
         .select_from(models.Service)
         .join(models.Appointment, models.Appointment.service_id == models.Service.id)
         .where(
-            models.Service.owner_id == current_user.id,
+            models.Service.organization_id == membership.organization_id,
             models.Appointment.status == "completed",
         )
         .group_by(models.Service.id, models.Service.name)
@@ -129,7 +129,7 @@ async def get_popular_services(
 @router.get("/masters-workload")
 async def get_masters_workload(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
     date_from: dt,
     date_to: dt,
 ):
@@ -149,7 +149,7 @@ async def get_masters_workload(
             & (models.Appointment.start_time <= date_to),
         )
         .outerjoin(models.Service, models.Appointment.service_id == models.Service.id)
-        .where(models.Master.owner_id == current_user.id)
+        .where(models.Master.organization_id == membership.organization_id)
         .group_by(models.Master.id, models.Master.full_name)
         .order_by(func.sum(models.Service.price).desc().nulls_last()),
     )

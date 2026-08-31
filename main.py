@@ -28,7 +28,7 @@ app.include_router(clients.router, prefix="/api/organizations/{organization_id}/
 app.include_router(services.router, prefix="/api/organizations/{organization_id}/services", tags=["services"])
 app.include_router(masters.router, prefix="/api/organizations/{organization_id}/masters", tags=["masters"])
 app.include_router(appointments.router, prefix="/api/organizations/{organization_id}/appointments", tags=["appointments"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(analytics.router, prefix="/api/organizations/{organization_id}/analytics", tags=["analytics"])
 
 app.add_middleware(
     CORSMiddleware,
