@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import re
 
 
-async def get_owned(db: AsyncSession, model, obj_id: int, owner_id: int, name: str):
+async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
     result = await db.execute(
-        select(model).where(model.id == obj_id, model.owner_id == owner_id),
+        select(model).where(model.id == obj_id, model.organization_id == organization_id),
     )
     obj = result.scalars().first()
     if not obj:
