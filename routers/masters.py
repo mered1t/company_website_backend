@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from auth.auth import CurrentUser
+from auth.auth import CurrentMembership
+from common import get_owned
 from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
 
@@ -17,10 +18,10 @@ router = APIRouter()
 async def create_master(
     master: MasterCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     new_master = models.Master(
-        owner_id=current_user.id,
+        organization_id=membership.organization_id,
         full_name=master.full_name,
         phone=master.phone,
         photo=master.photo,
@@ -43,12 +44,12 @@ async def create_master(
 @router.get("", response_model=list[MasterPublic])
 async def list_masters(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
         select(models.Master)
         .options(selectinload(models.Master.working_hours))
-        .where(models.Master.owner_id == current_user.id),
+        .where(models.Master.organization_id == membership.organization_id),
     )
     return result.scalars().all()
 
@@ -57,14 +58,14 @@ async def list_masters(
 async def get_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
         select(models.Master)
         .options(selectinload(models.Master.working_hours))
         .where(
             models.Master.id == master_id,
-            models.Master.owner_id == current_user.id,
+            models.Master.organization_id == membership.organization_id,
         ),
     )
     master = result.scalars().first()
@@ -78,14 +79,14 @@ async def update_master(
     master_id: int,
     master_update: MasterUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
         select(models.Master)
         .options(selectinload(models.Master.working_hours))
         .where(
             models.Master.id == master_id,
-            models.Master.owner_id == current_user.id,
+            models.Master.organization_id == membership.organization_id,
         ),
     )
     master = result.scalars().first()
@@ -106,14 +107,14 @@ async def replace_working_hours(
     master_id: int,
     working_hours: list[WorkingHoursBase],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
         select(models.Master)
         .options(selectinload(models.Master.working_hours))
         .where(
             models.Master.id == master_id,
-            models.Master.owner_id == current_user.id,
+            models.Master.organization_id == membership.organization_id,
         ),
     )
     master = result.scalars().first()
@@ -139,12 +140,12 @@ async def replace_working_hours(
 async def delete_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    membership: CurrentMembership,
 ):
     result = await db.execute(
         select(models.Master).where(
             models.Master.id == master_id,
-            models.Master.owner_id == current_user.id,
+            models.Master.organization_id == membership.organization_id,
         ),
     )
     master = result.scalars().first()

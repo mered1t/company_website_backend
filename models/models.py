@@ -27,8 +27,6 @@ class User(Base):
         default=None,
     )
 
-    masters: Mapped[list["Master"]] = relationship(back_populates="owner")
-    appointments: Mapped[list["Appointment"]] = relationship(back_populates="owner")
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user")
 
     @property
@@ -66,19 +64,19 @@ class Service(Base):
 
     organization: Mapped["Organization"] = relationship(back_populates="services")
 
+
 class Master(Base):
     __tablename__ = "masters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(150), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
-    owner: Mapped["User"] = relationship(back_populates="masters")
+    organization: Mapped["Organization"] = relationship(back_populates="masters")
     working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
-    appointments: Mapped[list["Appointment"]] = relationship(back_populates="master")
 
 
 class WorkingHours(Base):
@@ -107,10 +105,10 @@ class Appointment(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
-    owner: Mapped["User"] = relationship(back_populates="appointments")
+    owner: Mapped["User"] = relationship()
     client: Mapped["Client"] = relationship(back_populates="appointments")
     service: Mapped["Service"] = relationship()
-    master: Mapped["Master"] = relationship(back_populates="appointments")
+    master: Mapped["Master"] = relationship()
 
     @property
     def service_name(self) -> str:
@@ -127,6 +125,7 @@ class Appointment(Base):
     @property
     def client_name(self) -> str:
         return self.client.full_name
+
 
 class MembershipRole(str, Enum):
     owner = "owner"
@@ -145,6 +144,7 @@ class Organization(Base):
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")
     services: Mapped[list["Service"]] = relationship(back_populates="organization")
+    masters: Mapped[list["Master"]] = relationship(back_populates="organization")
 
 
 class Membership(Base):
