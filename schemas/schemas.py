@@ -10,7 +10,6 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8)
-    organization_name: str | None = None
 
 
 class UserPublic(BaseModel):
@@ -176,3 +175,16 @@ class AppointmentWithDetails(AppointmentPublic):
     service_name: str
     service_price: int
     master_name: str
+
+
+class OrganizationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+
+
+class OrganizationPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    created_at: datetime

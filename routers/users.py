@@ -51,22 +51,6 @@ async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_
         password_hash=hash_password(user.password),
     )
     db.add(new_user)
-    await db.flush()  # получаем new_user.id, ещё не коммитим
-
-    org_name = user.organization_name or f"{user.username}'s organization"
-    org_slug = await generate_unique_slug(db, models.Organization, org_name)
-
-    new_org = models.Organization(name=org_name, slug=org_slug)
-    db.add(new_org)
-    await db.flush()  # получаем new_org.id
-
-    new_membership = models.Membership(
-        user_id=new_user.id,
-        organization_id=new_org.id,
-        role=models.MembershipRole.owner,
-    )
-    db.add(new_membership)
-
     await db.commit()
     await db.refresh(new_user)
     return new_user

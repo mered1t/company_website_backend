@@ -6,7 +6,7 @@ from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from db.database import Base, engine
-from routers import users, clients, services, masters, appointments, analytics
+from routers import users, clients, services, masters, appointments, analytics, organizations
 
 
 @asynccontextmanager
@@ -23,12 +23,15 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
+app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(clients.router, prefix="/api/organizations/{organization_id}/clients", tags=["clients"])
 app.include_router(services.router, prefix="/api/organizations/{organization_id}/services", tags=["services"])
 app.include_router(masters.router, prefix="/api/organizations/{organization_id}/masters", tags=["masters"])
 app.include_router(appointments.router, prefix="/api/organizations/{organization_id}/appointments", tags=["appointments"])
 app.include_router(analytics.router, prefix="/api/organizations/{organization_id}/analytics", tags=["analytics"])
+
+
 
 app.add_middleware(
     CORSMiddleware,
