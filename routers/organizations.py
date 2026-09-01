@@ -5,10 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentUser
-from common import generate_unique_slug
+from auth.auth import CurrentUser, CurrentMembership, require_role
+from common import generate_unique_slug, generate_invitation_token
 from db.database import get_db
-from schemas.schemas import OrganizationCreate, OrganizationPublic
+from schemas.schemas import OrganizationCreate, OrganizationPublic, InvitationCreate, InvitationPublic
+
+from datetime import datetime as dt, timedelta
 
 router = APIRouter()
 
@@ -48,3 +50,31 @@ async def list_my_organizations(
         .where(models.Membership.user_id == current_user.id),
     )
     return result.scalars().all()
+
+
+
+@router.post(
+    "/{organization_id}/invitations",
+    response_model=InvitationPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_invitation(
+    organization_id: int,
+    invitation: InvitationCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    new_invitation = models.Invitation(
+        organization_id=organization_id,
+        email=invitation.email.lower(),
+        role=models.MembershipRole(invitation.role),
+        token=generate_invitation_token(),
+        expires_at=dt.now() + timedelta(days=7),
+    )
+    db.add(new_invitation)
+    await db.commit()
+    await db.refresh(new_invitation)
+
+    # TODO: отправить email через Resend на следующем шаге
+
+    return new_invitation

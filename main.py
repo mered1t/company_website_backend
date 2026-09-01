@@ -6,7 +6,7 @@ from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from db.database import Base, engine
-from routers import users, clients, services, masters, appointments, analytics, organizations
+from routers import users, clients, services, masters, appointments, analytics, organizations, invitations
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.include_router(services.router, prefix="/api/organizations/{organization_id}
 app.include_router(masters.router, prefix="/api/organizations/{organization_id}/masters", tags=["masters"])
 app.include_router(appointments.router, prefix="/api/organizations/{organization_id}/appointments", tags=["appointments"])
 app.include_router(analytics.router, prefix="/api/organizations/{organization_id}/analytics", tags=["analytics"])
+app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 
 
 

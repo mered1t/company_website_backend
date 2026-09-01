@@ -188,3 +188,27 @@ class OrganizationPublic(BaseModel):
     name: str
     slug: str
     created_at: datetime
+
+
+class InvitationCreate(BaseModel):
+    email: EmailStr
+    role: str = Field(pattern="^(admin|master)$")
+
+
+class InvitationPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    role: str
+    organization_id: int
+    token: str
+    expires_at: datetime
+    accepted: bool
+
+
+class InvitationPreview(BaseModel):
+    organization_name: str
+    email: str
+    role: str
+    valid: bool

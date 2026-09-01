@@ -146,6 +146,7 @@ class Organization(Base):
     services: Mapped[list["Service"]] = relationship(back_populates="organization")
     masters: Mapped[list["Master"]] = relationship(back_populates="organization")
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="organization")
+    invitations: Mapped[list["Invitation"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
 
 class Membership(Base):
@@ -160,3 +161,18 @@ class Membership(Base):
 
     user: Mapped["User"] = relationship(back_populates="memberships")
     organization: Mapped["Organization"] = relationship(back_populates="memberships")
+
+
+class Invitation(Base):
+    __tablename__ = "invitations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    role: Mapped[MembershipRole] = mapped_column(nullable=False)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    accepted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    organization: Mapped["Organization"] = relationship(back_populates="invitations")

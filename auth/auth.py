@@ -117,3 +117,11 @@ async def get_current_membership(
 
 
 CurrentMembership = Annotated[Membership, Depends(get_current_membership)]
+
+
+def require_role(*allowed_roles: "models.MembershipRole"):
+    async def checker(membership: CurrentMembership) -> models.Membership:
+        if membership.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return membership
+    return checker

@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import secrets
 
 import re
 
@@ -33,3 +34,8 @@ async def generate_unique_slug(db: AsyncSession, model, base_text: str) -> str:
             return slug
         slug = f"{base_slug}-{counter}"
         counter += 1
+
+
+
+def generate_invitation_token() -> str:
+    return secrets.token_urlsafe(32)
