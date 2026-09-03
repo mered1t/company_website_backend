@@ -88,6 +88,7 @@ async def accept_invitation(
         user_id=current_user.id,
         organization_id=invitation.organization_id,
         role=invitation.role,
+        master_id=invitation.master_id,
     )
     db.add(membership)
     invitation.accepted = True

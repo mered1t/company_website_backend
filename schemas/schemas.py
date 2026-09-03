@@ -193,6 +193,7 @@ class OrganizationPublic(BaseModel):
 class InvitationCreate(BaseModel):
     email: EmailStr
     role: str = Field(pattern="^(admin|master)$")
+    master_id: int | None = None
 
 
 class InvitationPublic(BaseModel):
@@ -202,6 +203,7 @@ class InvitationPublic(BaseModel):
     email: str
     role: str
     organization_id: int
+    master_id: int | None
     token: str
     expires_at: datetime
     accepted: bool

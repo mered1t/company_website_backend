@@ -9,6 +9,7 @@ from db.database import Base
 
 import re
 from enum import Enum
+from typing import Optional
 
 class User(Base):
     __tablename__ = "users"
@@ -156,11 +157,13 @@ class Membership(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id"), nullable=True)
     role: Mapped[MembershipRole] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     user: Mapped["User"] = relationship(back_populates="memberships")
     organization: Mapped["Organization"] = relationship(back_populates="memberships")
+    master: Mapped[Optional["Master"]] = relationship()
 
 
 class Invitation(Base):
@@ -168,6 +171,7 @@ class Invitation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id"), nullable=True)
     email: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     role: Mapped[MembershipRole] = mapped_column(nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)

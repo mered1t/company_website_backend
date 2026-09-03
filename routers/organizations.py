@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,17 +64,28 @@ async def create_invitation(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
+    if invitation.role == "master" and invitation.master_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="master_id is required when inviting a master")
+
+    if invitation.master_id is not None:
+        result = await db.execute(
+            select(models.Master).where(
+                models.Master.id == invitation.master_id,
+                models.Master.organization_id == organization_id,
+            ),
+        )
+        if not result.scalars().first():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found in this organization")
+
     new_invitation = models.Invitation(
         organization_id=organization_id,
         email=invitation.email.lower(),
         role=models.MembershipRole(invitation.role),
+        master_id=invitation.master_id,
         token=generate_invitation_token(),
         expires_at=dt.now() + timedelta(days=7),
     )
     db.add(new_invitation)
     await db.commit()
     await db.refresh(new_invitation)
-
-    # TODO: отправить email через Resend на следующем шаге
-
     return new_invitation
