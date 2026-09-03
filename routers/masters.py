@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from auth.auth import CurrentMembership
+from auth.auth import CurrentMembership, require_role
 from common import get_owned
 from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
@@ -18,7 +18,10 @@ router = APIRouter()
 async def create_master(
     master: MasterCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(
+        require_role(models.MembershipRole.owner,
+                     models.MembershipRole.admin))],
 ):
     new_master = models.Master(
         organization_id=membership.organization_id,
@@ -79,7 +82,9 @@ async def update_master(
     master_id: int,
     master_update: MasterUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
 ):
     result = await db.execute(
         select(models.Master)
@@ -107,7 +112,9 @@ async def replace_working_hours(
     master_id: int,
     working_hours: list[WorkingHoursBase],
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
 ):
     result = await db.execute(
         select(models.Master)
@@ -140,7 +147,9 @@ async def replace_working_hours(
 async def delete_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
 ):
     result = await db.execute(
         select(models.Master).where(

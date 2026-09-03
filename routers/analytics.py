@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentMembership
+from auth.auth import CurrentMembership, require_role
 from db.database import get_db
 
 router = APIRouter()
@@ -15,7 +15,9 @@ router = APIRouter()
 @router.get("/revenue")
 async def get_revenue(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
     date_from: dt,
     date_to: dt,
 ):
@@ -37,7 +39,9 @@ async def get_revenue(
 @router.get("/top-clients")
 async def get_top_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
     limit: int = 10,
 ):
     result = await db.execute(
@@ -68,7 +72,9 @@ async def get_top_clients(
 @router.get("/inactive-clients")
 async def get_inactive_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
     days: int = 30,
 ):
     cutoff = dt.now() - timedelta(days=days)
@@ -99,7 +105,9 @@ async def get_inactive_clients(
 @router.get("/popular-services")
 async def get_popular_services(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
     limit: int = 10,
 ):
     result = await db.execute(
@@ -129,7 +137,9 @@ async def get_popular_services(
 @router.get("/masters-workload")
 async def get_masters_workload(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
     date_from: dt,
     date_to: dt,
 ):

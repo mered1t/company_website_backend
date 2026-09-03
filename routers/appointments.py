@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from common import get_owned
-from auth.auth import CurrentMembership
+from auth.auth import CurrentMembership, require_role
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
@@ -49,27 +49,38 @@ async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time,
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master already has an appointment at this time")
 
 
+def _check_can_modify(membership: models.Membership, appointment: models.Appointment):
+    if membership.role == models.MembershipRole.master and appointment.master_id != membership.master_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only modify your own appointments")
+
+
 @router.post("", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     appointment: AppointmentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
 ):
+    master_id = appointment.master_id
+    if membership.role == models.MembershipRole.master:
+        if membership.master_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your membership is not linked to a master profile")
+        master_id = membership.master_id
+
     await get_owned(db, models.Client, appointment.client_id, membership.organization_id, "Client")
     service = await get_owned(db, models.Service, appointment.service_id, membership.organization_id, "Service")
-    await get_owned(db, models.Master, appointment.master_id, membership.organization_id, "Master")
+    await get_owned(db, models.Master, master_id, membership.organization_id, "Master")
 
     start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
-    await _check_working_hours(db, appointment.master_id, start_time, end_time)
-    await _check_overlap(db, appointment.master_id, start_time, end_time)
+    await _check_working_hours(db, master_id, start_time, end_time)
+    await _check_overlap(db, master_id, start_time, end_time)
 
     new_appointment = models.Appointment(
         organization_id=membership.organization_id,
         client_id=appointment.client_id,
         service_id=appointment.service_id,
-        master_id=appointment.master_id,
+        master_id=master_id,
         start_time=start_time,
         end_time=end_time,
         notes=appointment.notes,
@@ -137,8 +148,9 @@ async def update_appointment(
     membership: CurrentMembership,
 ):
     appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
-    update_data = appointment_update.model_dump(exclude_unset=True)
+    _check_can_modify(membership, appointment)
 
+    update_data = appointment_update.model_dump(exclude_unset=True)
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
 
     for field, value in update_data.items():
@@ -165,5 +177,8 @@ async def delete_appointment(
     membership: CurrentMembership,
 ):
     appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
+    if membership.role == models.MembershipRole.master:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Masters cannot delete appointments")
+
     await db.delete(appointment)
     await db.commit()

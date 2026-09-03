@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from auth.auth import CurrentMembership
+from auth.auth import CurrentMembership, require_role
 from common import get_owned
 from db.database import get_db
 from schemas.schemas import AppointmentWithDetails, ClientCreate, ClientPublic, ClientUpdate
@@ -72,7 +72,9 @@ async def update_client(
 async def delete_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
     await db.delete(client)

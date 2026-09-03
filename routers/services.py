@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentMembership
+from auth.auth import CurrentMembership, require_role
 from common import get_owned
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
@@ -17,7 +17,7 @@ router = APIRouter()
 async def create_service(
     service: ServiceCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     new_service = models.Service(
         organization_id=membership.organization_id,
@@ -54,7 +54,10 @@ async def update_service(
     service_id: int,
     service_update: ServiceUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(
+        models.MembershipRole.owner,
+        models.MembershipRole.admin))],
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
 
@@ -71,7 +74,10 @@ async def update_service(
 async def delete_service(
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
+    membership: Annotated[models.Membership,
+    Depends(require_role(
+        models.MembershipRole.owner,
+        models.MembershipRole.admin))],
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
     await db.delete(service)
