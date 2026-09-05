@@ -11,5 +11,6 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     database_url: str
     access_token_expire_minutes: int = 60 * 24
+    resend_api_key: str
 
 settings = Settings() #type: ignore[call-arg] # Loaded from env file

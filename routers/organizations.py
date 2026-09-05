@@ -11,6 +11,7 @@ from db.database import get_db
 from schemas.schemas import OrganizationCreate, OrganizationPublic, InvitationCreate, InvitationPublic
 
 from datetime import datetime as dt, timedelta
+from email_service import send_invitation_email
 
 router = APIRouter()
 
@@ -88,4 +89,14 @@ async def create_invitation(
     db.add(new_invitation)
     await db.commit()
     await db.refresh(new_invitation)
+
+    org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
+    org = org_result.scalars().first()
+
+    send_invitation_email(
+        to_email=new_invitation.email,
+        organization_name=org.name,
+        token=new_invitation.token,
+    )
+
     return new_invitation
