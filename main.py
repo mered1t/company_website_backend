@@ -8,6 +8,11 @@ from contextlib import asynccontextmanager
 from db.database import Base, engine
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from rate_limiter import limiter
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -19,6 +24,9 @@ async def lifespan(_app: FastAPI):
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/media", StaticFiles(directory="media"), name="media")

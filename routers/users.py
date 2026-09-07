@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
@@ -17,14 +17,14 @@ from schemas.schemas import (
     UserUpdate,
     Token)
 
+from rate_limiter import limiter
+
 router = APIRouter()
 
-@router.post(
-    "",
-    response_model=UserPrivate,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
+
+@router.post("", response_model=UserPrivate, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
+async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(models.User).where(func.lower(models.User.username) == user.username.lower()),
     )
@@ -91,8 +91,11 @@ async def get_current_user(
         )
     return user
 
+
 @router.post("/token", response_model=Token)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
