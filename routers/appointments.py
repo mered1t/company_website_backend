@@ -2,7 +2,7 @@ from datetime import timedelta
 from datetime import datetime as dt
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,9 +95,14 @@ async def create_appointment(
 async def list_appointments(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
 ):
     result = await db.execute(
-        select(models.Appointment).where(models.Appointment.organization_id == membership.organization_id),
+        select(models.Appointment)
+        .where(models.Appointment.organization_id == membership.organization_id)
+        .offset(skip)
+        .limit(limit),
     )
     return result.scalars().all()
 
@@ -109,6 +114,8 @@ async def get_calendar(
     date_from: dt,
     date_to: dt,
     master_id: int | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ):
     query = (
         select(models.Appointment)
@@ -126,7 +133,7 @@ async def get_calendar(
     if master_id is not None:
         query = query.where(models.Appointment.master_id == master_id)
 
-    query = query.order_by(models.Appointment.start_time)
+    query = query.order_by(models.Appointment.start_time).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 

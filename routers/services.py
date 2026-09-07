@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,9 +33,14 @@ async def create_service(
 async def list_services(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
 ):
     result = await db.execute(
-        select(models.Service).where(models.Service.organization_id == membership.organization_id),
+        select(models.Service)
+        .where(models.Service.organization_id == membership.organization_id)
+        .offset(skip)
+        .limit(limit),
     )
     return result.scalars().all()
 
