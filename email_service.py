@@ -25,3 +25,18 @@ def send_invitation_email(to_email: str, organization_name: str, token: str) -> 
             <p>This link is valid for 7 days.</p>
         """,
     })
+
+
+def send_password_reset_email(to_email: str, token: str) -> None:
+    reset_url = f"https://vashcrm.com/reset-password?token={token}"
+
+    resend.Emails.send({
+        "from": "onboarding@resend.dev",
+        "to": to_email,
+        "subject": "Reset your password",
+        "html": f"""
+            <p>You requested a password reset.</p>
+            <p><a href="{reset_url}">Click here to set a new password</a></p>
+            <p>This link is valid for 30 minutes. If you didn't request this, you can ignore this email.</p>
+        """,
+    })

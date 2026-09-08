@@ -15,9 +15,15 @@ from schemas.schemas import (
     UserCreate,
     UserPrivate,
     UserUpdate,
-    Token)
+    Token,
+    ForgotPasswordRequest,
+    ResetPasswordRequest)
 
 from rate_limiter import limiter
+
+import secrets
+from datetime import datetime as dt, timedelta
+from email_service import send_password_reset_email
 
 router = APIRouter()
 
@@ -113,6 +119,55 @@ async def login(
 
     access_token = create_access_token(data={"sub": str(user.id)})
     return Token(access_token=access_token)
+
+
+@router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
+async def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.User).where(func.lower(models.User.email) == payload.email.lower()),
+    )
+    user = result.scalars().first()
+
+    if user:
+        token = secrets.token_urlsafe(32)
+        reset_token = models.PasswordResetToken(
+            user_id=user.id,
+            token=token,
+            expires_at=dt.now() + timedelta(minutes=30),
+        )
+        db.add(reset_token)
+        await db.commit()
+
+        send_password_reset_email(to_email=user.email, token=token)
+
+    # Всегда одинаковый ответ, независимо от того, найден email или нет
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.PasswordResetToken).where(models.PasswordResetToken.token == payload.token),
+    )
+    reset_token = result.scalars().first()
+
+    if not reset_token or reset_token.used or reset_token.expires_at < dt.now():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    user_result = await db.execute(select(models.User).where(models.User.id == reset_token.user_id))
+    user = user_result.scalars().first()
+
+    user.password_hash = hash_password(payload.new_password)
+    reset_token.used = True
+
+    await db.commit()
 
 
 @router.patch("/{user_id}", response_model=UserPrivate)

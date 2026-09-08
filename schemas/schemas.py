@@ -214,3 +214,12 @@ class InvitationPreview(BaseModel):
     email: str
     role: str
     valid: bool
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
