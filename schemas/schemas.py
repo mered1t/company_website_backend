@@ -39,7 +39,7 @@ class Token(BaseModel):
 
 class ClientBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=150)
-    phone: str = Field(min_length=5, max_length=20)
+    phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = None
     birth_date: date | None = None
     notes: str | None = None
@@ -51,7 +51,7 @@ class ClientCreate(ClientBase):
 
 class ClientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
-    phone: str | None = Field(default=None, min_length=5, max_length=20)
+    phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = None
     birth_date: date | None = None
     notes: str | None = None
@@ -116,7 +116,7 @@ class WorkingHoursPublic(WorkingHoursFields):
 
 class MasterBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=150)
-    phone: str | None = None
+    phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = None
 
 
@@ -126,7 +126,7 @@ class MasterCreate(MasterBase):
 
 class MasterUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
-    phone: str | None = None
+    phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = None
 
 
