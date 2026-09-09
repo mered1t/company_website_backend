@@ -8,12 +8,42 @@ import models
 from auth.auth import CurrentUser, CurrentMembership, require_role
 from common import generate_unique_slug, generate_invitation_token
 from db.database import get_db
-from schemas.schemas import OrganizationCreate, OrganizationPublic, InvitationCreate, InvitationPublic
+from schemas.schemas import (OrganizationCreate,
+                             OrganizationPublic,
+                             InvitationCreate,
+                             InvitationPublic,
+                             OrganizationWithRole,
+                             MemberPublic)
 
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
 
 router = APIRouter()
+
+
+@router.get("/{organization_id}/members", response_model=list[MemberPublic])
+async def list_members(
+    organization_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    result = await db.execute(
+        select(models.User, models.Membership.role, models.Membership.master_id)
+        .join(models.Membership, models.Membership.user_id == models.User.id)
+        .where(models.Membership.organization_id == organization_id),
+    )
+    rows = result.all()
+
+    return [
+        MemberPublic(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            role=role.value,
+            master_id=master_id,
+        )
+        for user, role, master_id in rows
+    ]
 
 
 @router.post("", response_model=OrganizationPublic, status_code=status.HTTP_201_CREATED)
@@ -40,17 +70,29 @@ async def create_organization(
     return new_org
 
 
-@router.get("", response_model=list[OrganizationPublic])
+@router.get("", response_model=list[OrganizationWithRole])
 async def list_my_organizations(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
     result = await db.execute(
-        select(models.Organization)
+        select(models.Organization, models.Membership.role, models.Membership.master_id)
         .join(models.Membership, models.Membership.organization_id == models.Organization.id)
         .where(models.Membership.user_id == current_user.id),
     )
-    return result.scalars().all()
+    rows = result.all()
+
+    return [
+        OrganizationWithRole(
+            id=org.id,
+            name=org.name,
+            slug=org.slug,
+            created_at=org.created_at,
+            role=role.value,
+            master_id=master_id,
+        )
+        for org, role, master_id in rows
+    ]
 
 
 
@@ -100,3 +142,39 @@ async def create_invitation(
     )
 
     return new_invitation
+
+
+@router.get("/{organization_id}/invitations", response_model=list[InvitationPublic])
+async def list_invitations(
+    organization_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.Invitation).where(
+            models.Invitation.organization_id == organization_id,
+            models.Invitation.accepted == False,
+        ),
+    )
+    return result.scalars().all()
+
+
+@router.delete("/{organization_id}/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invitation(
+    organization_id: int,
+    invitation_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.Invitation).where(
+            models.Invitation.id == invitation_id,
+            models.Invitation.organization_id == organization_id,
+        ),
+    )
+    invitation = result.scalars().first()
+    if not invitation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+
+    await db.delete(invitation)
+    await db.commit()

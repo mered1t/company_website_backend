@@ -190,6 +190,19 @@ class OrganizationPublic(BaseModel):
     created_at: datetime
 
 
+class OrganizationWithRole(OrganizationPublic):
+    role: str
+    master_id: int | None = None
+
+
+class MemberPublic(BaseModel):
+    user_id: int
+    username: str
+    email: str
+    role: str
+    master_id: int | None = None
+
+
 class InvitationCreate(BaseModel):
     email: EmailStr
     role: str = Field(pattern="^(admin|master)$")

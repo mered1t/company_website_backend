@@ -94,3 +94,26 @@ async def accept_invitation(
     invitation.accepted = True
 
     await db.commit()
+
+
+@router.post("/{invitation_id}/decline", status_code=status.HTTP_204_NO_CONTENT)
+async def decline_invitation(
+    invitation_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    result = await db.execute(
+        select(models.Invitation).where(models.Invitation.id == invitation_id),
+    )
+    invitation = result.scalars().first()
+    if not invitation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+
+    if invitation.email.lower() != current_user.email.lower():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This invitation is not for you")
+
+    if invitation.accepted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation already accepted")
+
+    await db.delete(invitation)
+    await db.commit()
