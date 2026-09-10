@@ -38,6 +38,7 @@ class User(Base):
 
 class Client(Base):
     __tablename__ = "clients"
+    __table_args__ = (UniqueConstraint("organization_id", "phone", name="uq_client_phone_per_org"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)

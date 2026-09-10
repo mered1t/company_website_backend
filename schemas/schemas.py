@@ -236,3 +236,36 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8)
+
+
+class RevenueResponse(BaseModel):
+    date_from: datetime
+    date_to: datetime
+    total_revenue: int
+
+
+class TopClientResponse(BaseModel):
+    client_id: int
+    full_name: str
+    total_spent: int
+    visits_count: int
+
+
+class InactiveClientResponse(BaseModel):
+    client_id: int
+    full_name: str
+    last_visit: datetime | None
+
+
+class PopularServiceResponse(BaseModel):
+    service_id: int
+    name: str
+    times_booked: int
+    total_revenue: int
+
+
+class MasterWorkloadResponse(BaseModel):
+    master_id: int
+    full_name: str
+    appointments_count: int
+    total_revenue: int

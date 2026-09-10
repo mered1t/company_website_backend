@@ -9,10 +9,18 @@ import models
 from auth.auth import CurrentMembership, require_role
 from db.database import get_db
 
+from schemas.schemas import (
+    RevenueResponse,
+    TopClientResponse,
+    InactiveClientResponse,
+    PopularServiceResponse,
+    MasterWorkloadResponse,
+)
+
 router = APIRouter()
 
 
-@router.get("/revenue")
+@router.get("/revenue", response_model=RevenueResponse)
 async def get_revenue(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership,
@@ -36,7 +44,7 @@ async def get_revenue(
     return {"date_from": date_from, "date_to": date_to, "total_revenue": total}
 
 
-@router.get("/top-clients")
+@router.get("/top-clients", response_model=list[TopClientResponse])
 async def get_top_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership,
@@ -69,7 +77,7 @@ async def get_top_clients(
     ]
 
 
-@router.get("/inactive-clients")
+@router.get("/inactive-clients", response_model=list[InactiveClientResponse])
 async def get_inactive_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership,
@@ -102,7 +110,7 @@ async def get_inactive_clients(
     ]
 
 
-@router.get("/popular-services")
+@router.get("/popular-services", response_model=list[PopularServiceResponse])
 async def get_popular_services(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership,
@@ -134,7 +142,7 @@ async def get_popular_services(
     ]
 
 
-@router.get("/masters-workload")
+@router.get("/masters-workload", response_model=list[MasterWorkloadResponse])
 async def get_masters_workload(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: Annotated[models.Membership,

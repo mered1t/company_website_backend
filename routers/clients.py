@@ -1,9 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 import models
 from auth.auth import CurrentMembership, require_role
@@ -25,7 +27,11 @@ async def create_client(
         **client.model_dump(),
     )
     db.add(new_client)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
     await db.refresh(new_client)
     return new_client
 
@@ -68,7 +74,11 @@ async def update_client(
     for field, value in update_data.items():
         setattr(client, field, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
     await db.refresh(client)
     return client
 
