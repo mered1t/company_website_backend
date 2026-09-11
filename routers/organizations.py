@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,7 @@ from schemas.schemas import (OrganizationCreate,
                              InvitationCreate,
                              InvitationPublic,
                              OrganizationWithRole,
-                             MemberPublic)
+                             MemberPublic, ActivityLogPublic)
 
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
@@ -178,3 +178,21 @@ async def revoke_invitation(
 
     await db.delete(invitation)
     await db.commit()
+
+
+@router.get("/{organization_id}/activity", response_model=list[ActivityLogPublic])
+async def list_activity(
+    organization_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    result = await db.execute(
+        select(models.ActivityLog)
+        .where(models.ActivityLog.organization_id == organization_id)
+        .order_by(models.ActivityLog.created_at.desc())
+        .offset(skip)
+        .limit(limit),
+    )
+    return result.scalars().all()

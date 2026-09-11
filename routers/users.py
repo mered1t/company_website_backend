@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
-from auth.auth import hash_password, CurrentUser
+from auth.auth import hash_password, CurrentUser, create_refresh_token
 
 from fastapi.security import OAuth2PasswordRequestForm
 from auth.auth import hash_password, verify_password, create_access_token, verify_access_token, oauth2_scheme
@@ -17,7 +17,8 @@ from schemas.schemas import (
     UserUpdate,
     Token,
     ForgotPasswordRequest,
-    ResetPasswordRequest)
+    ResetPasswordRequest,
+    RefreshRequest,)
 
 from rate_limiter import limiter
 
@@ -118,7 +119,17 @@ async def login(
         )
 
     access_token = create_access_token(data={"sub": str(user.id)})
-    return Token(access_token=access_token)
+
+    refresh_token_value = create_refresh_token()
+    refresh_token = models.RefreshToken(
+        user_id=user.id,
+        token=refresh_token_value,
+        expires_at=dt.now() + timedelta(days=30),
+    )
+    db.add(refresh_token)
+    await db.commit()
+
+    return Token(access_token=access_token, refresh_token=refresh_token_value)
 
 
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -211,3 +222,34 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_access_token(
+    payload: RefreshRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.RefreshToken).where(models.RefreshToken.token == payload.refresh_token),
+    )
+    refresh_token = result.scalars().first()
+
+    if not refresh_token or refresh_token.revoked or refresh_token.expires_at < dt.now():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    access_token = create_access_token(data={"sub": str(refresh_token.user_id)})
+    return Token(access_token=access_token, refresh_token=payload.refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    payload: RefreshRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.RefreshToken).where(models.RefreshToken.token == payload.refresh_token),
+    )
+    refresh_token = result.scalars().first()
+    if refresh_token:
+        refresh_token.revoked = True
+        await db.commit()

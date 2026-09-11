@@ -2,9 +2,10 @@ from fastapi import HTTPException, status
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import secrets
 
+import secrets
 import re
+import models
 
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
@@ -39,3 +40,23 @@ async def generate_unique_slug(db: AsyncSession, model, base_text: str) -> str:
 
 def generate_invitation_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+async def log_activity(
+    db: AsyncSession,
+    organization_id: int,
+    user_id: int,
+    action: str,
+    entity_type: str,
+    entity_id: int,
+    details: str | None = None,
+) -> None:
+    log_entry = models.ActivityLog(
+        organization_id=organization_id,
+        user_id=user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+    )
+    db.add(log_entry)

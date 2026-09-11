@@ -15,6 +15,8 @@ from db.database import get_db
 from models import Membership
 import models
 
+import secrets
+
 password_hash = PasswordHash.recommended()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/users/token")
@@ -125,3 +127,7 @@ def require_role(*allowed_roles: "models.MembershipRole"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return membership
     return checker
+
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(32)

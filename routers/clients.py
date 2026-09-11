@@ -8,10 +8,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
 import models
-from auth.auth import CurrentMembership, require_role
-from common import get_owned
+from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentWithDetails, ClientCreate, ClientPublic, ClientUpdate
+
+from datetime import datetime as dt
+from common import get_owned, log_activity
 
 router = APIRouter()
 
@@ -45,7 +47,10 @@ async def list_clients(
 ):
     result = await db.execute(
         select(models.Client)
-        .where(models.Client.organization_id == membership.organization_id)
+        .where(
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        )
         .offset(skip)
         .limit(limit),
     )
@@ -58,7 +63,17 @@ async def get_client(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
 ):
-    return await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+    result = await db.execute(
+        select(models.Client).where(
+            models.Client.id == client_id,
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        ),
+    )
+    client = result.scalars().first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    return client
 
 
 @router.patch("/{client_id}", response_model=ClientPublic)
@@ -87,12 +102,18 @@ async def update_client(
 async def delete_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
-    await db.delete(client)
+    client.deleted_at = dt.now()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="client", entity_id=client_id,
+        details=f"Deleted client {client.full_name}",
+    )
+
     await db.commit()
 
 

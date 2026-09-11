@@ -33,7 +33,12 @@ class UserUpdate(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 
@@ -269,3 +274,15 @@ class MasterWorkloadResponse(BaseModel):
     full_name: str
     appointments_count: int
     total_revenue: int
+
+
+class ActivityLogPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    action: str
+    entity_type: str
+    entity_id: int
+    details: str | None
+    created_at: datetime
