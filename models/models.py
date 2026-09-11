@@ -64,6 +64,7 @@ class Service(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     organization: Mapped["Organization"] = relationship(back_populates="services")
 
@@ -77,6 +78,7 @@ class Master(Base):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     organization: Mapped["Organization"] = relationship(back_populates="masters")
     working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
@@ -107,6 +109,7 @@ class Appointment(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     organization: Mapped["Organization"] = relationship(back_populates="appointments")
     client: Mapped["Client"] = relationship(back_populates="appointments")

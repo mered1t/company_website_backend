@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from auth.auth import CurrentMembership, require_role
-from common import get_owned
+from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
+
+from datetime import datetime as dt
+from common import get_owned, log_activity
 
 router = APIRouter()
 
@@ -54,7 +56,10 @@ async def list_masters(
     result = await db.execute(
         select(models.Master)
         .options(selectinload(models.Master.working_hours))
-        .where(models.Master.organization_id == membership.organization_id)
+        .where(
+            models.Master.organization_id == membership.organization_id,
+            models.Master.deleted_at.is_(None),
+        )
         .offset(skip)
         .limit(limit),
     )
@@ -73,6 +78,7 @@ async def get_master(
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,
+            models.Master.deleted_at.is_(None),
         ),
     )
     master = result.scalars().first()
@@ -151,9 +157,8 @@ async def replace_working_hours(
 async def delete_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     result = await db.execute(
         select(models.Master).where(
@@ -165,5 +170,12 @@ async def delete_master(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    await db.delete(master)
+    master.deleted_at = dt.now()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="master", entity_id=master_id,
+        details=f"Deleted master {master.full_name}",
+    )
+
     await db.commit()

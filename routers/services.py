@@ -5,10 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentMembership, require_role
-from common import get_owned
+from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
+
+from common import get_owned, log_activity
+from datetime import datetime as dt
 
 router = APIRouter()
 
@@ -38,7 +40,10 @@ async def list_services(
 ):
     result = await db.execute(
         select(models.Service)
-        .where(models.Service.organization_id == membership.organization_id)
+        .where(
+            models.Service.organization_id == membership.organization_id,
+            models.Service.deleted_at.is_(None),
+        )
         .offset(skip)
         .limit(limit),
     )
@@ -51,27 +56,16 @@ async def get_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
 ):
-    return await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
-
-
-@router.patch("/{service_id}", response_model=ServicePublic)
-async def update_service(
-    service_id: int,
-    service_update: ServiceUpdate,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(
-        models.MembershipRole.owner,
-        models.MembershipRole.admin))],
-):
-    service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
-
-    update_data = service_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(service, field, value)
-
-    await db.commit()
-    await db.refresh(service)
+    result = await db.execute(
+        select(models.Service).where(
+            models.Service.id == service_id,
+            models.Service.organization_id == membership.organization_id,
+            models.Service.deleted_at.is_(None),
+        ),
+    )
+    service = result.scalars().first()
+    if not service:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     return service
 
 
@@ -79,11 +73,16 @@ async def update_service(
 async def delete_service(
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(
-        models.MembershipRole.owner,
-        models.MembershipRole.admin))],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
-    await db.delete(service)
+    service.deleted_at = dt.now()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="service", entity_id=service_id,
+        details=f"Deleted service {service.name}",
+    )
+
     await db.commit()

@@ -8,10 +8,11 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from common import get_owned
-from auth.auth import CurrentMembership, require_role
+from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
+
+from common import get_owned, log_activity
 
 router = APIRouter()
 
@@ -100,7 +101,10 @@ async def list_appointments(
 ):
     result = await db.execute(
         select(models.Appointment)
-        .where(models.Appointment.organization_id == membership.organization_id)
+        .where(
+            models.Appointment.organization_id == membership.organization_id,
+            models.Appointment.deleted_at.is_(None),
+        )
         .offset(skip)
         .limit(limit),
     )
@@ -126,6 +130,7 @@ async def get_calendar(
         )
         .where(
             models.Appointment.organization_id == membership.organization_id,
+            models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time >= date_from,
             models.Appointment.start_time <= date_to,
         )
@@ -144,7 +149,17 @@ async def get_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
 ):
-    return await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
+    result = await db.execute(
+        select(models.Appointment).where(
+            models.Appointment.id == appointment_id,
+            models.Appointment.organization_id == membership.organization_id,
+            models.Appointment.deleted_at.is_(None),
+        ),
+    )
+    appointment = result.scalars().first()
+    if not appointment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+    return appointment
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentPublic)
@@ -181,11 +196,18 @@ async def update_appointment(
 async def delete_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: CurrentMembership,
 ):
     appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
     if membership.role == models.MembershipRole.master:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Masters cannot delete appointments")
 
-    await db.delete(appointment)
+    appointment.deleted_at = dt.now()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="appointment", entity_id=appointment_id,
+    )
+
     await db.commit()
