@@ -19,6 +19,7 @@ router = APIRouter()
 async def create_service(
     service: ServiceCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     new_service = models.Service(
@@ -26,6 +27,14 @@ async def create_service(
         **service.model_dump(),
     )
     db.add(new_service)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="service", entity_id=new_service.id,
+        details=f"Created service {new_service.name}",
+    )
+
     await db.commit()
     await db.refresh(new_service)
     return new_service
@@ -66,6 +75,31 @@ async def get_service(
     service = result.scalars().first()
     if not service:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    return service
+
+
+@router.patch("/{service_id}", response_model=ServicePublic)
+async def update_service(
+    service_id: int,
+    service_update: ServiceUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
+
+    update_data = service_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(service, field, value)
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="service", entity_id=service_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
+
+    await db.commit()
+    await db.refresh(service)
     return service
 
 

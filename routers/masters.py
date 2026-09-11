@@ -20,10 +20,8 @@ router = APIRouter()
 async def create_master(
     master: MasterCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(
-        require_role(models.MembershipRole.owner,
-                     models.MembershipRole.admin))],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     new_master = models.Master(
         organization_id=membership.organization_id,
@@ -41,6 +39,14 @@ async def create_master(
         )
 
     db.add(new_master)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="master", entity_id=new_master.id,
+        details=f"Created master {new_master.full_name}",
+    )
+
     await db.commit()
     await db.refresh(new_master, attribute_names=["working_hours"])
     return new_master
@@ -92,9 +98,8 @@ async def update_master(
     master_id: int,
     master_update: MasterUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     result = await db.execute(
         select(models.Master)
@@ -111,6 +116,12 @@ async def update_master(
     update_data = master_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(master, field, value)
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="master", entity_id=master_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
 
     await db.commit()
     await db.refresh(master, attribute_names=["working_hours"])

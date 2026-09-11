@@ -59,6 +59,7 @@ def _check_can_modify(membership: models.Membership, appointment: models.Appoint
 async def create_appointment(
     appointment: AppointmentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: CurrentMembership,
 ):
     master_id = appointment.master_id
@@ -87,6 +88,13 @@ async def create_appointment(
         notes=appointment.notes,
     )
     db.add(new_appointment)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="appointment", entity_id=new_appointment.id,
+    )
+
     await db.commit()
     await db.refresh(new_appointment)
     return new_appointment
@@ -167,12 +175,14 @@ async def update_appointment(
     appointment_id: int,
     appointment_update: AppointmentUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: CurrentMembership,
 ):
     appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
     _check_can_modify(membership, appointment)
 
     update_data = appointment_update.model_dump(exclude_unset=True)
+
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
 
     for field, value in update_data.items():
@@ -186,6 +196,12 @@ async def update_appointment(
         appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
         await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
         await _check_overlap(db, appointment.master_id, appointment.start_time, appointment.end_time, exclude_id=appointment.id)
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="appointment", entity_id=appointment_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
 
     await db.commit()
     await db.refresh(appointment)
