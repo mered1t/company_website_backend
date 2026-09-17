@@ -6,7 +6,7 @@ from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from db.database import Base, engine
-from routers import users, clients, services, masters, appointments, analytics, organizations, invitations
+from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -16,9 +16,6 @@ from rate_limiter import limiter
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
     # Shutdown
     await engine.dispose()
@@ -39,6 +36,7 @@ app.include_router(masters.router, prefix="/api/organizations/{organization_id}/
 app.include_router(appointments.router, prefix="/api/organizations/{organization_id}/appointments", tags=["appointments"])
 app.include_router(analytics.router, prefix="/api/organizations/{organization_id}/analytics", tags=["analytics"])
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
+app.include_router(public.router, prefix="/api/public", tags=["public"])
 
 
 

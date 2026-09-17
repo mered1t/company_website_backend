@@ -286,3 +286,18 @@ class ActivityLogPublic(BaseModel):
     entity_id: int
     details: str | None
     created_at: datetime
+
+
+class AvailableSlot(BaseModel):
+    start_time: datetime
+    end_time: datetime
+
+
+class PublicBookingRequest(BaseModel):
+    client_full_name: str = Field(min_length=1, max_length=150)
+    client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
+    client_email: EmailStr | None = None
+    master_id: int
+    service_id: int
+    start_time: datetime
+    notes: str | None = Field(default=None, max_length=500)
