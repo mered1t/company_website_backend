@@ -1,7 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, status, HTTPException, Query, Request
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
@@ -17,6 +17,7 @@ from schemas.schemas import (OrganizationCreate,
 
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
+from rate_limiter import limiter
 
 router = APIRouter()
 
@@ -101,7 +102,9 @@ async def list_my_organizations(
     response_model=InvitationPublic,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("10/hour")
 async def create_invitation(
+    request: Request,
     organization_id: int,
     invitation: InvitationCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -120,6 +123,28 @@ async def create_invitation(
         if not result.scalars().first():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found in this organization")
 
+    existing_membership = await db.execute(
+        select(models.Membership)
+        .join(models.User, models.User.id == models.Membership.user_id)
+        .where(
+            models.Membership.organization_id == organization_id,
+            func.lower(models.User.email) == invitation.email.lower(),
+        ),
+    )
+    if existing_membership.scalars().first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This person is already a member of the organization")
+
+    existing_invitation = await db.execute(
+        select(models.Invitation).where(
+            models.Invitation.organization_id == organization_id,
+            models.Invitation.email == invitation.email.lower(),
+            models.Invitation.accepted == False,
+            models.Invitation.expires_at > dt.now(),
+        ),
+    )
+    if existing_invitation.scalars().first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An active invitation for this email already exists")
+
     new_invitation = models.Invitation(
         organization_id=organization_id,
         email=invitation.email.lower(),
@@ -135,13 +160,54 @@ async def create_invitation(
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
     org = org_result.scalars().first()
 
-    send_invitation_email(
-        to_email=new_invitation.email,
-        organization_name=org.name,
-        token=new_invitation.token,
-    )
+    try:
+        send_invitation_email(
+            to_email=new_invitation.email,
+            organization_name=org.name,
+            token=new_invitation.token,
+        )
+    except Exception:
+        pass
 
     return new_invitation
+
+
+@router.post("/{organization_id}/invitations/{invitation_id}/resend", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")
+async def resend_invitation(
+    request: Request,
+    organization_id: int,
+    invitation_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.Invitation).where(
+            models.Invitation.id == invitation_id,
+            models.Invitation.organization_id == organization_id,
+        ),
+    )
+    invitation = result.scalars().first()
+    if not invitation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+
+    if invitation.accepted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation already accepted")
+
+    if invitation.expires_at < dt.now():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation expired, create a new one")
+
+    org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
+    org = org_result.scalars().first()
+
+    try:
+        send_invitation_email(
+            to_email=invitation.email,
+            organization_name=org.name,
+            token=invitation.token,
+        )
+    except Exception:
+        pass
 
 
 @router.get("/{organization_id}/invitations", response_model=list[InvitationPublic])

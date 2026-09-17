@@ -136,6 +136,7 @@ async def get_client_appointments(
         .where(
             models.Appointment.client_id == client_id,
             models.Appointment.organization_id == membership.organization_id,
+            models.Appointment.deleted_at.is_(None),
         )
     )
     if status_filter is not None:

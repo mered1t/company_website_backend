@@ -18,6 +18,20 @@ async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, 
     return obj
 
 
+async def get_owned_active(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
+    result = await db.execute(
+        select(model).where(
+            model.id == obj_id,
+            model.organization_id == organization_id,
+            model.deleted_at.is_(None),
+        ),
+    )
+    obj = result.scalars().first()
+    if not obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{name} not found")
+    return obj
+
+
 def slugify(text: str) -> str:
     slug = text.lower().strip()
     slug = re.sub(r"[^a-z0-9\s-]", "", slug)

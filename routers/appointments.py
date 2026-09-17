@@ -12,7 +12,7 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
-from common import get_owned, log_activity
+from common import get_owned, get_owned_active, log_activity
 
 router = APIRouter()
 
@@ -68,9 +68,9 @@ async def create_appointment(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your membership is not linked to a master profile")
         master_id = membership.master_id
 
-    await get_owned(db, models.Client, appointment.client_id, membership.organization_id, "Client")
-    service = await get_owned(db, models.Service, appointment.service_id, membership.organization_id, "Service")
-    await get_owned(db, models.Master, master_id, membership.organization_id, "Master")
+    await get_owned_active(db, models.Client, appointment.client_id, membership.organization_id, "Client")
+    service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
     start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
@@ -192,7 +192,7 @@ async def update_appointment(
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
 
     if recheck_needed:
-        service = await get_owned(db, models.Service, appointment.service_id, membership.organization_id, "Service")
+        service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
         appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
         await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
         await _check_overlap(db, appointment.master_id, appointment.start_time, appointment.end_time, exclude_id=appointment.id)
