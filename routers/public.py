@@ -181,6 +181,7 @@ async def public_create_booking(
         select(models.Client).where(
             models.Client.organization_id == org.id,
             models.Client.phone == booking.client_phone,
+            models.Client.deleted_at.is_(None),
         ),
     )
     client = client_result.scalars().first()

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
-
 import re
 from enum import Enum
 from typing import Optional
@@ -38,7 +37,14 @@ class User(Base):
 
 class Client(Base):
     __tablename__ = "clients"
-    __table_args__ = (UniqueConstraint("organization_id", "phone", name="uq_client_phone_per_org"),)
+    __table_args__ = (
+        Index(
+            "uq_client_phone_per_org_active",
+            "organization_id", "phone",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)

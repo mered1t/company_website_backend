@@ -22,6 +22,7 @@ router = APIRouter()
 async def create_client(
     client: ClientCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: CurrentMembership,
 ):
     new_client = models.Client(
@@ -30,10 +31,18 @@ async def create_client(
     )
     db.add(new_client)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="client", entity_id=new_client.id,
+        details=f"Created client {new_client.full_name}",
+    )
+
+    await db.commit()
     await db.refresh(new_client)
     return new_client
 
