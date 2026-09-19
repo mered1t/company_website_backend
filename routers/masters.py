@@ -107,6 +107,7 @@ async def update_master(
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,
+            models.Master.deleted_at.is_(None),
         ),
     )
     master = result.scalars().first()
@@ -143,6 +144,7 @@ async def replace_working_hours(
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,
+            models.Master.deleted_at.is_(None),
         ),
     )
     master = result.scalars().first()

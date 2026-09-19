@@ -9,7 +9,7 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
-from common import get_owned, log_activity, check_no_active_appointments
+from common import get_owned, log_activity, check_no_active_appointments, get_owned_active
 from datetime import datetime as dt
 
 router = APIRouter()
@@ -86,7 +86,7 @@ async def update_service(
     current_user: CurrentUser,
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
-    service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
+    service = await get_owned_active(db, models.Service, service_id, membership.organization_id, "Service")
 
     update_data = service_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():

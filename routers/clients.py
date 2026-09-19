@@ -13,7 +13,7 @@ from db.database import get_db
 from schemas.schemas import AppointmentWithDetails, ClientCreate, ClientPublic, ClientUpdate
 
 from datetime import datetime as dt
-from common import get_owned, log_activity, check_no_active_appointments
+from common import get_owned, log_activity, check_no_active_appointments, get_owned_active
 
 router = APIRouter()
 
@@ -93,7 +93,7 @@ async def update_client(
     current_user: CurrentUser,
     membership: CurrentMembership,
 ):
-    client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+    client = await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     update_data = client_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
