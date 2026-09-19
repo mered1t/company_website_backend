@@ -262,3 +262,27 @@ async def list_activity(
         .limit(limit),
     )
     return result.scalars().all()
+
+
+@router.delete("/{organization_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    organization_id: int,
+    user_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.Membership).where(
+            models.Membership.organization_id == organization_id,
+            models.Membership.user_id == user_id,
+        ),
+    )
+    target_membership = result.scalars().first()
+    if not target_membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    if target_membership.role == models.MembershipRole.owner:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the organization owner")
+
+    await db.delete(target_membership)
+    await db.commit()
