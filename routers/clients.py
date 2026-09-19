@@ -13,7 +13,7 @@ from db.database import get_db
 from schemas.schemas import AppointmentWithDetails, ClientCreate, ClientPublic, ClientUpdate
 
 from datetime import datetime as dt
-from common import get_owned, log_activity
+from common import get_owned, log_activity, check_no_active_appointments
 
 router = APIRouter()
 
@@ -81,6 +81,7 @@ async def update_client(
     client_id: int,
     client_update: ClientUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: CurrentMembership,
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
@@ -88,6 +89,12 @@ async def update_client(
     update_data = client_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(client, field, value)
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="client", entity_id=client_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
 
     try:
         await db.commit()
@@ -106,6 +113,9 @@ async def delete_client(
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+
+    await check_no_active_appointments(db, "client_id", client_id, "client")
+
     client.deleted_at = dt.now()
 
     await log_activity(

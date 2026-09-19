@@ -7,6 +7,8 @@ import secrets
 import re
 import models
 
+from datetime import datetime, UTC
+
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
     result = await db.execute(
@@ -74,3 +76,20 @@ async def log_activity(
         details=details,
     )
     db.add(log_entry)
+
+
+async def check_no_active_appointments(db: AsyncSession, field_name: str, entity_id: int, entity_label: str) -> None:
+    field = getattr(models.Appointment, field_name)
+    result = await db.execute(
+        select(models.Appointment).where(
+            field == entity_id,
+            models.Appointment.status == "scheduled",
+            models.Appointment.deleted_at.is_(None),
+            models.Appointment.start_time > datetime.now(UTC).replace(tzinfo=None),
+        ),
+    )
+    if result.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete a {entity_label} with upcoming appointments. Cancel them first.",
+        )

@@ -9,7 +9,7 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
-from common import get_owned, log_activity
+from common import get_owned, log_activity, check_no_active_appointments
 from datetime import datetime as dt
 
 router = APIRouter()
@@ -111,6 +111,8 @@ async def delete_service(
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
+    await check_no_active_appointments(db, "service_id", service_id, "service")
+
     service.deleted_at = dt.now()
 
     await log_activity(

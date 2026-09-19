@@ -11,7 +11,7 @@ from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
 
 from datetime import datetime as dt
-from common import get_owned, log_activity
+from common import get_owned, log_activity, check_no_active_appointments
 
 router = APIRouter()
 
@@ -180,6 +180,8 @@ async def delete_master(
     master = result.scalars().first()
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
+
+    await check_no_active_appointments(db, "master_id", master_id, "master")
 
     master.deleted_at = dt.now()
 
