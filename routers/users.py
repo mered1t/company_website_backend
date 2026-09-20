@@ -196,9 +196,20 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if user_update.username is not None:
+    if user_update.username is not None and user_update.username.lower() != user.username.lower():
+        existing = await db.execute(
+            select(models.User).where(func.lower(models.User.username) == user_update.username.lower()),
+        )
+        if existing.scalars().first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
         user.username = user_update.username
-    if user_update.email is not None:
+
+    if user_update.email is not None and user_update.email.lower() != user.email.lower():
+        existing = await db.execute(
+            select(models.User).where(func.lower(models.User.email) == user_update.email.lower()),
+        )
+        if existing.scalars().first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
         user.email = user_update.email.lower()
 
     await db.commit()
