@@ -5,7 +5,7 @@ from typing import Annotated
 from auth.auth import hash_password, CurrentUser, create_refresh_token
 
 from fastapi.security import OAuth2PasswordRequestForm
-from auth.auth import hash_password, verify_password, create_access_token, verify_access_token, oauth2_scheme
+from auth.auth import hash_password, verify_password, create_access_token
 from common import generate_unique_slug
 
 from db.database import get_db
@@ -62,41 +62,10 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
     await db.refresh(new_user)
     return new_user
 
+
 @router.get("/me", response_model=UserPrivate)
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    """Get the currently authenticated user."""
-    user_id = verify_access_token(token)
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Validate user_id is a valid integer (defense against malformed JWT)
-    try:
-        user_id_int = int(user_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    result = await db.execute(
-        select(models.User).where(models.User.id == user_id_int),
-    )
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
+async def get_me(current_user: CurrentUser):
+    return current_user
 
 
 @router.post("/token", response_model=Token)
