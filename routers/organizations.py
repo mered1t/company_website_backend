@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentUser, CurrentMembership, require_role
-from common import generate_unique_slug, generate_invitation_token
+from common import generate_unique_slug, generate_invitation_token, log_activity
 from db.database import get_db
 from schemas.schemas import (OrganizationCreate,
                              OrganizationPublic,
@@ -65,6 +65,12 @@ async def create_organization(
         role=models.MembershipRole.owner,
     )
     db.add(membership)
+
+    await log_activity(
+        db, new_org.id, current_user.id,
+        action="created", entity_type="organization", entity_id=new_org.id,
+        details=f"Created organization {new_org.name}",
+    )
 
     await db.commit()
     await db.refresh(new_org)
@@ -154,6 +160,14 @@ async def create_invitation(
         expires_at=dt.now() + timedelta(days=7),
     )
     db.add(new_invitation)
+    await db.flush()
+
+    await log_activity(
+        db, organization_id, membership.user_id,
+        action="created", entity_type="invitation", entity_id=new_invitation.id,
+        details=f"Invited {new_invitation.email} as {new_invitation.role.value}",
+    )
+
     await db.commit()
     await db.refresh(new_invitation)
 
@@ -283,6 +297,11 @@ async def remove_member(
 
     if target_membership.role == models.MembershipRole.owner:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the organization owner")
+
+    await log_activity(
+        db, organization_id, membership.user_id,
+        action="deleted", entity_type="member", entity_id=user_id,
+    )
 
     await db.delete(target_membership)
     await db.commit()

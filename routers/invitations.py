@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentUser
-from common import generate_invitation_token
+from common import generate_invitation_token, log_activity
 from db.database import get_db
 from schemas.schemas import InvitationCreate, InvitationPreview, InvitationPublic
 
@@ -93,6 +93,12 @@ async def accept_invitation(
     db.add(membership)
     invitation.accepted = True
 
+    await log_activity(
+        db, invitation.organization_id, current_user.id,
+        action="created", entity_type="member", entity_id=current_user.id,
+        details=f"{current_user.username} accepted invitation as {invitation.role.value}",
+    )
+
     await db.commit()
 
 
@@ -114,6 +120,12 @@ async def decline_invitation(
 
     if invitation.accepted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation already accepted")
+
+    await log_activity(
+        db, invitation.organization_id, current_user.id,
+        action="deleted", entity_type="invitation", entity_id=invitation.id,
+        details=f"{current_user.username} declined invitation",
+    )
 
     await db.delete(invitation)
     await db.commit()
