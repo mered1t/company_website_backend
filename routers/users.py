@@ -129,7 +129,9 @@ async def forgot_password(
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
 async def reset_password(
+    request: Request,
     payload: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -205,7 +207,9 @@ async def delete_user(
 
 
 @router.post("/refresh", response_model=Token)
+@limiter.limit("10/minute")
 async def refresh_access_token(
+    request: Request,
     payload: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -222,7 +226,9 @@ async def refresh_access_token(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
 async def logout(
+    request: Request,
     payload: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
