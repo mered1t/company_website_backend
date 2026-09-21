@@ -134,6 +134,7 @@ async def replace_working_hours(
     master_id: int,
     working_hours: list[WorkingHoursBase],
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: Annotated[models.Membership,
     Depends(require_role(models.MembershipRole.owner,
                          models.MembershipRole.admin))],
@@ -160,6 +161,12 @@ async def replace_working_hours(
                 end_time=wh.end_time,
             ),
         )
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="master", entity_id=master_id,
+        details=f"Updated working hours for {master.full_name}",
+    )
 
     await db.commit()
     await db.refresh(master, attribute_names=["working_hours"])

@@ -223,6 +223,13 @@ async def resend_invitation(
     except Exception:
         pass
 
+    await log_activity(
+        db, organization_id, membership.user_id,
+        action="updated", entity_type="invitation", entity_id=invitation.id,
+        details=f"Resent invitation to {invitation.email}",
+    )
+    await db.commit()
+
 
 @router.get("/{organization_id}/invitations", response_model=list[InvitationPublic])
 async def list_invitations(
@@ -255,6 +262,12 @@ async def revoke_invitation(
     invitation = result.scalars().first()
     if not invitation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+
+    await log_activity(
+        db, organization_id, membership.user_id,
+        action="deleted", entity_type="invitation", entity_id=invitation.id,
+        details=f"Revoked invitation to {invitation.email}",
+    )
 
     await db.delete(invitation)
     await db.commit()
