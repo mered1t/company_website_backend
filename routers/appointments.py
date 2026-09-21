@@ -178,7 +178,8 @@ async def update_appointment(
     current_user: CurrentUser,
     membership: CurrentMembership,
 ):
-    appointment = await get_owned(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
+    appointment = await get_owned_active(db, models.Appointment, appointment_id,
+                                         membership.organization_id,"Appointment")
     _check_can_modify(membership, appointment)
 
     update_data = appointment_update.model_dump(exclude_unset=True)
