@@ -32,7 +32,8 @@ async def get_organization_by_slug(slug: str, db: AsyncSession) -> models.Organi
 
 
 @router.get("/{slug}/services", response_model=list[ServicePublic])
-async def public_list_services(slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
+@limiter.limit("30/minute")
+async def public_list_services(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
     org = await get_organization_by_slug(slug, db)
     result = await db.execute(
         select(models.Service).where(
@@ -44,7 +45,8 @@ async def public_list_services(slug: str, db: Annotated[AsyncSession, Depends(ge
 
 
 @router.get("/{slug}/masters", response_model=list[MasterPublic])
-async def public_list_masters(slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
+@limiter.limit("30/minute")
+async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
     org = await get_organization_by_slug(slug, db)
     result = await db.execute(
         select(models.Master)
@@ -58,7 +60,9 @@ async def public_list_masters(slug: str, db: Annotated[AsyncSession, Depends(get
 
 
 @router.get("/{slug}/available-slots", response_model=list[AvailableSlot])
+@limiter.limit("30/minute")
 async def get_available_slots(
+    request: Request,
     slug: str,
     master_id: int,
     service_id: int,
