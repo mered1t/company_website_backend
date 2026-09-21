@@ -6,7 +6,6 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstr
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
-import re
 from enum import Enum
 from typing import Optional
 
@@ -21,11 +20,6 @@ class User(Base):
         String(250),
         nullable=True,
         default=None,)
-    image_file: Mapped[str | None] = mapped_column(
-        String(200),
-        nullable=True,
-        default=None,
-    )
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user")
 

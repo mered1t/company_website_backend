@@ -5,13 +5,6 @@ from config import settings
 resend.api_key = settings.resend_api_key
 
 
-import resend
-
-from config import settings
-
-resend.api_key = settings.resend_api_key
-
-
 def send_invitation_email(to_email: str, organization_name: str, token: str) -> None:
     accept_url = f"https://koracrm.com/invitations/accept?token={token}"
 

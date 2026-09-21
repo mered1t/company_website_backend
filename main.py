@@ -1,7 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI
-from starlette.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
@@ -24,9 +23,6 @@ app = FastAPI(lifespan=lifespan)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])

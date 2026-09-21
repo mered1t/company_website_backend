@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_db
-from models import Membership
 import models
 
 import secrets
@@ -102,11 +101,11 @@ async def get_current_membership(
     organization_id: int,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Membership:
+) -> models.Membership:
     result = await db.execute(
-        select(Membership).where(
-            Membership.user_id == current_user.id,
-            Membership.organization_id == organization_id,
+        select(models.Membership).where(
+            models.Membership.user_id == current_user.id,
+            models.Membership.organization_id == organization_id,
         ),
     )
     membership = result.scalars().first()
@@ -118,7 +117,7 @@ async def get_current_membership(
     return membership
 
 
-CurrentMembership = Annotated[Membership, Depends(get_current_membership)]
+CurrentMembership = Annotated[models.Membership, Depends(get_current_membership)]
 
 
 def require_role(*allowed_roles: "models.MembershipRole"):
