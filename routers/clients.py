@@ -150,7 +150,7 @@ async def get_client_appointments(
     membership: CurrentMembership,
     status_filter: str | None = None,
 ):
-    await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     query = (
         select(models.Appointment)
@@ -181,7 +181,7 @@ async def get_client_activity(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     appointment_ids_result = await db.execute(
         select(models.Appointment.id).where(models.Appointment.client_id == client_id),
