@@ -17,6 +17,7 @@ from schemas.schemas import (ServicePublic,
 
 
 from datetime import date as date_type, datetime, timedelta
+from common import log_activity
 from datetime import datetime as dt
 from rate_limiter import limiter
 
@@ -199,6 +200,12 @@ async def public_create_booking(
         )
         db.add(client)
         await db.flush()
+
+        await log_activity(
+            db, org.id, None,
+            action="created", entity_type="client", entity_id=client.id,
+            details=f"Client created via public booking: {client.full_name}",
+        )
     elif client.email is None and booking.client_email is not None:
         client.email = booking.client_email
 
@@ -227,6 +234,14 @@ async def public_create_booking(
         notes=booking.notes,
     )
     db.add(new_appointment)
+    await db.flush()
+
+    await log_activity(
+        db, org.id, None,
+        action="created", entity_type="appointment", entity_id=new_appointment.id,
+        details=f"Public booking by {booking.client_full_name} ({booking.client_phone})",
+    )
+
     await db.commit()
     await db.refresh(new_appointment)
     return new_appointment

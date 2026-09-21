@@ -61,7 +61,7 @@ def generate_invitation_token() -> str:
 async def log_activity(
     db: AsyncSession,
     organization_id: int,
-    user_id: int,
+    user_id: int | None,
     action: str,
     entity_type: str,
     entity_id: int,
