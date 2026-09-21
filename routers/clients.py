@@ -10,10 +10,17 @@ from sqlalchemy.exc import IntegrityError
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
-from schemas.schemas import AppointmentWithDetails, ClientCreate, ClientPublic, ClientUpdate
+from schemas.schemas import (AppointmentWithDetails,
+                             ClientCreate,
+                             ClientPublic,
+                             ClientUpdate,
+                             ActivityLogPublic)
 
 from datetime import datetime as dt
-from common import get_owned, log_activity, check_no_active_appointments, get_owned_active
+from common import (get_owned,
+                    log_activity,
+                    check_no_active_appointments,
+                    get_owned_active)
 
 router = APIRouter()
 
@@ -163,4 +170,41 @@ async def get_client_appointments(
 
     query = query.order_by(models.Appointment.start_time.desc())
     result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/{client_id}/activity", response_model=list[ActivityLogPublic])
+async def get_client_activity(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
+
+    appointment_ids_result = await db.execute(
+        select(models.Appointment.id).where(models.Appointment.client_id == client_id),
+    )
+    appointment_ids = [row[0] for row in appointment_ids_result.all()]
+
+    conditions = models.ActivityLog.entity_type == "client", models.ActivityLog.entity_id == client_id
+    if appointment_ids:
+        appointment_condition = (
+            models.ActivityLog.entity_type == "appointment"
+        ) & (models.ActivityLog.entity_id.in_(appointment_ids))
+        query_filter = (conditions[0] & conditions[1]) | appointment_condition
+    else:
+        query_filter = conditions[0] & conditions[1]
+
+    result = await db.execute(
+        select(models.ActivityLog)
+        .where(
+            models.ActivityLog.organization_id == membership.organization_id,
+            query_filter,
+        )
+        .order_by(models.ActivityLog.created_at.desc())
+        .offset(skip)
+        .limit(limit),
+    )
     return result.scalars().all()
