@@ -11,7 +11,7 @@ from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
 
 from datetime import datetime as dt
-from common import get_owned, log_activity, check_no_active_appointments
+from common import get_owned, log_activity, check_no_active_appointments, restore_entity
 
 router = APIRouter()
 
@@ -166,6 +166,26 @@ async def replace_working_hours(
         db, membership.organization_id, current_user.id,
         action="updated", entity_type="master", entity_id=master_id,
         details=f"Updated working hours for {master.full_name}",
+    )
+
+    await db.commit()
+    await db.refresh(master, attribute_names=["working_hours"])
+    return master
+
+
+@router.post("/{master_id}/restore", response_model=MasterPublic)
+async def restore_master(
+    master_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    master = await restore_entity(db, models.Master, master_id, membership.organization_id, "Master")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="restored", entity_type="master", entity_id=master_id,
+        details=f"Restored master {master.full_name}",
     )
 
     await db.commit()

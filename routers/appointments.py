@@ -12,7 +12,7 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
-from common import get_owned, get_owned_active, log_activity
+from common import get_owned, get_owned_active, log_activity, restore_entity
 
 router = APIRouter()
 
@@ -202,6 +202,26 @@ async def update_appointment(
         db, membership.organization_id, current_user.id,
         action="updated", entity_type="appointment", entity_id=appointment_id,
         details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
+
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
+@router.post("/{appointment_id}/restore", response_model=AppointmentPublic)
+async def restore_appointment(
+    appointment_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    appointment = await restore_entity(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="restored", entity_type="appointment", entity_id=appointment_id,
+        details="Restored appointment",
     )
 
     await db.commit()

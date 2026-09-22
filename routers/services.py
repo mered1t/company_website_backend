@@ -9,7 +9,12 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
-from common import get_owned, log_activity, check_no_active_appointments, get_owned_active
+from common import (get_owned,
+                    log_activity,
+                    check_no_active_appointments,
+                    get_owned_active,
+                    restore_entity)
+
 from datetime import datetime as dt
 
 router = APIRouter()
@@ -96,6 +101,26 @@ async def update_service(
         db, membership.organization_id, current_user.id,
         action="updated", entity_type="service", entity_id=service_id,
         details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
+
+    await db.commit()
+    await db.refresh(service)
+    return service
+
+
+@router.post("/{service_id}/restore", response_model=ServicePublic)
+async def restore_service(
+    service_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    service = await restore_entity(db, models.Service, service_id, membership.organization_id, "Service")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="restored", entity_type="service", entity_id=service_id,
+        details=f"Restored service {service.name}",
     )
 
     await db.commit()

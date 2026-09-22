@@ -93,3 +93,19 @@ async def check_no_active_appointments(db: AsyncSession, field_name: str, entity
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete a {entity_label} with upcoming appointments. Cancel them first.",
         )
+
+
+async def restore_entity(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
+    result = await db.execute(
+        select(model).where(
+            model.id == obj_id,
+            model.organization_id == organization_id,
+        ),
+    )
+    obj = result.scalars().first()
+    if not obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{name} not found")
+    if obj.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name} is not deleted")
+    obj.deleted_at = None
+    return obj

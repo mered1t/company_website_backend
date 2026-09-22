@@ -20,7 +20,8 @@ from datetime import datetime as dt
 from common import (get_owned,
                     log_activity,
                     check_no_active_appointments,
-                    get_owned_active)
+                    get_owned_active,
+                    restore_entity)
 
 router = APIRouter()
 
@@ -117,6 +118,26 @@ async def update_client(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
+    await db.refresh(client)
+    return client
+
+
+@router.post("/{client_id}/restore", response_model=ClientPublic)
+async def restore_client(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    client = await restore_entity(db, models.Client, client_id, membership.organization_id, "Client")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="restored", entity_type="client", entity_id=client_id,
+        details=f"Restored client {client.full_name}",
+    )
+
+    await db.commit()
     await db.refresh(client)
     return client
 
