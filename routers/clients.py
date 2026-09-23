@@ -60,18 +60,23 @@ async def create_client(
 async def list_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    q: str | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    result = await db.execute(
-        select(models.Client)
-        .where(
-            models.Client.organization_id == membership.organization_id,
-            models.Client.deleted_at.is_(None),
-        )
-        .offset(skip)
-        .limit(limit),
+    query = select(models.Client).where(
+        models.Client.organization_id == membership.organization_id,
+        models.Client.deleted_at.is_(None),
     )
+
+    if q:
+        search_term = f"%{q}%"
+        query = query.where(
+            models.Client.full_name.ilike(search_term) | models.Client.phone.ilike(search_term),
+        )
+
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
