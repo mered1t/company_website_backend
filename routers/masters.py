@@ -11,7 +11,11 @@ from db.database import get_db
 from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
 
 from datetime import datetime as dt
-from common import get_owned, log_activity, check_no_active_appointments, restore_entity
+from common import (get_owned,
+                    log_activity,
+                    check_no_active_appointments,
+                    restore_entity,
+                    check_no_history)
 
 router = APIRouter()
 
@@ -220,4 +224,35 @@ async def delete_master(
         details=f"Deleted master {master.full_name}",
     )
 
+    await db.commit()
+
+
+@router.delete("/{master_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def hard_delete_master(
+    master_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+):
+    result = await db.execute(
+        select(models.Master).where(
+            models.Master.id == master_id,
+            models.Master.organization_id == membership.organization_id,
+        ),
+    )
+    master = result.scalars().first()
+    if not master:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
+    if master.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master must be soft-deleted first")
+
+    await check_no_history(db, "master_id", master_id, "master")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="hard_deleted", entity_type="master", entity_id=master_id,
+        details=f"Permanently deleted master {master.full_name}",
+    )
+
+    await db.delete(master)
     await db.commit()

@@ -13,7 +13,8 @@ from common import (get_owned,
                     log_activity,
                     check_no_active_appointments,
                     get_owned_active,
-                    restore_entity)
+                    restore_entity,
+                    check_no_history)
 
 from datetime import datetime as dt
 
@@ -146,4 +147,35 @@ async def delete_service(
         details=f"Deleted service {service.name}",
     )
 
+    await db.commit()
+
+
+@router.delete("/{service_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def hard_delete_service(
+    service_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+):
+    result = await db.execute(
+        select(models.Service).where(
+            models.Service.id == service_id,
+            models.Service.organization_id == membership.organization_id,
+        ),
+    )
+    service = result.scalars().first()
+    if not service:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    if service.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service must be soft-deleted first")
+
+    await check_no_history(db, "service_id", service_id, "service")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="hard_deleted", entity_type="service", entity_id=service_id,
+        details=f"Permanently deleted service {service.name}",
+    )
+
+    await db.delete(service)
     await db.commit()

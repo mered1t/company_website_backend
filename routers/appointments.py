@@ -248,3 +248,32 @@ async def delete_appointment(
     )
 
     await db.commit()
+
+
+@router.delete("/{appointment_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def hard_delete_appointment(
+    appointment_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+):
+    result = await db.execute(
+        select(models.Appointment).where(
+            models.Appointment.id == appointment_id,
+            models.Appointment.organization_id == membership.organization_id,
+        ),
+    )
+    appointment = result.scalars().first()
+    if not appointment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+    if appointment.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment must be soft-deleted first")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="hard_deleted", entity_type="appointment", entity_id=appointment_id,
+        details="Permanently deleted appointment",
+    )
+
+    await db.delete(appointment)
+    await db.commit()

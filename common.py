@@ -109,3 +109,13 @@ async def restore_entity(db: AsyncSession, model, obj_id: int, organization_id: 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name} is not deleted")
     obj.deleted_at = None
     return obj
+
+
+async def check_no_history(db: AsyncSession, field_name: str, entity_id: int, entity_label: str) -> None:
+    field = getattr(models.Appointment, field_name)
+    result = await db.execute(select(models.Appointment).where(field == entity_id))
+    if result.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot permanently delete a {entity_label} with appointment history",
+        )

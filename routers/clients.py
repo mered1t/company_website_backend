@@ -21,7 +21,8 @@ from common import (get_owned,
                     log_activity,
                     check_no_active_appointments,
                     get_owned_active,
-                    restore_entity)
+                    restore_entity,
+                    check_no_history)
 
 router = APIRouter()
 
@@ -161,6 +162,37 @@ async def delete_client(
         details=f"Deleted client {client.full_name}",
     )
 
+    await db.commit()
+
+
+@router.delete("/{client_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def hard_delete_client(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+):
+    result = await db.execute(
+        select(models.Client).where(
+            models.Client.id == client_id,
+            models.Client.organization_id == membership.organization_id,
+        ),
+    )
+    client = result.scalars().first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if client.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client must be soft-deleted first")
+
+    await check_no_history(db, "client_id", client_id, "client")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="hard_deleted", entity_type="client", entity_id=client_id,
+        details=f"Permanently deleted client {client.full_name}",
+    )
+
+    await db.delete(client)
     await db.commit()
 
 
