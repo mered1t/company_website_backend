@@ -45,6 +45,18 @@ async def create_master(
     db.add(new_master)
     await db.flush()
 
+    if master.service_ids:
+        services_result = await db.execute(
+            select(models.Service).where(
+                models.Service.id.in_(master.service_ids),
+                models.Service.organization_id == membership.organization_id,
+                models.Service.deleted_at.is_(None),
+            ),
+        )
+        for service in services_result.scalars().all():
+            db.add(models.MasterService(master_id=new_master.id, service_id=service.id))
+        await db.flush()
+
     await log_activity(
         db, membership.organization_id, current_user.id,
         action="created", entity_type="master", entity_id=new_master.id,
@@ -52,7 +64,7 @@ async def create_master(
     )
 
     await db.commit()
-    await db.refresh(new_master, attribute_names=["working_hours"])
+    await db.refresh(new_master, attribute_names=["working_hours", "services"])
     return new_master
 
 
@@ -65,7 +77,7 @@ async def list_masters(
 ):
     result = await db.execute(
         select(models.Master)
-        .options(selectinload(models.Master.working_hours))
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
         .where(
             models.Master.organization_id == membership.organization_id,
             models.Master.deleted_at.is_(None),
@@ -84,7 +96,7 @@ async def get_master(
 ):
     result = await db.execute(
         select(models.Master)
-        .options(selectinload(models.Master.working_hours))
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,
@@ -107,7 +119,7 @@ async def update_master(
 ):
     result = await db.execute(
         select(models.Master)
-        .options(selectinload(models.Master.working_hours))
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,
@@ -145,7 +157,7 @@ async def replace_working_hours(
 ):
     result = await db.execute(
         select(models.Master)
-        .options(selectinload(models.Master.working_hours))
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
         .where(
             models.Master.id == master_id,
             models.Master.organization_id == membership.organization_id,

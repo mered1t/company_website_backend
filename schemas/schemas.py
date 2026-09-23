@@ -124,6 +124,7 @@ class MasterBase(BaseModel):
 
 class MasterCreate(MasterBase):
     working_hours: list[WorkingHoursBase] = []
+    service_ids: list[int] = []
 
 
 class MasterUpdate(BaseModel):
@@ -138,6 +139,7 @@ class MasterPublic(MasterBase):
     id: int
     created_at: datetime
     working_hours: list[WorkingHoursPublic] = []
+    services: list[ServicePublic] = []
 
 
 

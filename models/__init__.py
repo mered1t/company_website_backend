@@ -3,4 +3,4 @@ from models.models import (User, Client, Service,
                            Appointment, Organization,
                            Membership, MembershipRole,
                            Invitation, PasswordResetToken,
-                           RefreshToken, ActivityLog)
+                           RefreshToken, ActivityLog, MasterService)

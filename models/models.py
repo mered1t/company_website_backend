@@ -82,6 +82,16 @@ class Master(Base):
 
     organization: Mapped["Organization"] = relationship(back_populates="masters")
     working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
+    services: Mapped[list["Service"]] = relationship(secondary="master_services")
+
+
+class MasterService(Base):
+    __tablename__ = "master_services"
+    __table_args__ = (UniqueConstraint("master_id", "service_id", name="uq_master_service"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False, index=True)
 
 
 class WorkingHours(Base):

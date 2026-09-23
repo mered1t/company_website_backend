@@ -72,6 +72,19 @@ async def create_appointment(
     service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
+    master_services_result = await db.execute(
+        select(models.Master)
+        .options(selectinload(models.Master.services))
+        .where(models.Master.id == master_id),
+    )
+    master_obj = master_services_result.scalars().first()
+
+    if master_obj.services and service not in master_obj.services:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This master does not provide this service",
+        )
+
     start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
