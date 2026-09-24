@@ -119,3 +119,52 @@ async def check_no_history(db: AsyncSession, field_name: str, entity_id: int, en
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot permanently delete a {entity_label} with appointment history",
         )
+
+
+async def find_conflicting_appointments(db: AsyncSession, master_id: int, start_dt, end_dt) -> list[int]:
+    result = await db.execute(
+        select(models.Appointment.id).where(
+            models.Appointment.master_id == master_id,
+            models.Appointment.status == "scheduled",
+            models.Appointment.deleted_at.is_(None),
+            models.Appointment.start_time < end_dt,
+            models.Appointment.end_time > start_dt,
+        ),
+    )
+    return [row[0] for row in result.all()]
+
+
+async def get_available_intervals(db: AsyncSession, master_id: int, target_date) -> list[tuple[str, str]]:
+    day_start = datetime.combine(target_date, datetime.min.time())
+    day_end = datetime.combine(target_date, datetime.max.time().replace(microsecond=0))
+
+    time_off_result = await db.execute(
+        select(models.TimeOff).where(
+            models.TimeOff.master_id == master_id,
+            models.TimeOff.start_date <= day_end,
+            models.TimeOff.end_date >= day_start,
+        ),
+    )
+    if time_off_result.scalars().first():
+        return []
+
+    exceptions_result = await db.execute(
+        select(models.WorkingHoursException).where(
+            models.WorkingHoursException.master_id == master_id,
+            models.WorkingHoursException.date >= day_start,
+            models.WorkingHoursException.date <= day_end,
+        ),
+    )
+    exceptions = exceptions_result.scalars().all()
+    if exceptions:
+        return [(e.start_time, e.end_time) for e in exceptions]
+
+    day_of_week = target_date.weekday()
+    wh_result = await db.execute(
+        select(models.WorkingHours).where(
+            models.WorkingHours.master_id == master_id,
+            models.WorkingHours.day_of_week == day_of_week,
+        ),
+    )
+    working_hours = wh_result.scalars().all()
+    return [(wh.start_time, wh.end_time) for wh in working_hours]

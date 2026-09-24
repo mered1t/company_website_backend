@@ -12,22 +12,22 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
-from common import get_owned, get_owned_active, log_activity, restore_entity
+from common import get_owned, get_owned_active, log_activity, restore_entity, get_available_intervals
 
 router = APIRouter()
 
 
 async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
-    day_of_week = start_time.weekday()
-    result = await db.execute(
-        select(models.WorkingHours).where(
-            models.WorkingHours.master_id == master_id,
-            models.WorkingHours.day_of_week == day_of_week,
-        ),
-    )
-    working_hours = result.scalars().first()
-    if not working_hours:
+    intervals = await get_available_intervals(db, master_id, start_time.date())
+    if not intervals:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master does not work on this day")
+
+    start_str = start_time.strftime("%H:%M")
+    end_str = end_time.strftime("%H:%M")
+
+    fits = any(start_str >= s and end_str <= e for s, e in intervals)
+    if not fits:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment time is outside master's working hours")
 
     start_str = start_time.strftime("%H:%M")
     end_str = end_time.strftime("%H:%M")

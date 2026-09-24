@@ -8,14 +8,25 @@ from sqlalchemy.orm import selectinload
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
-from schemas.schemas import MasterCreate, MasterPublic, MasterUpdate, WorkingHoursBase
+from schemas.schemas import (MasterCreate,
+                             MasterPublic,
+                             MasterUpdate,
+                             WorkingHoursBase,
+                             TimeOffCreate,
+                             TimeOffPublic,
+                             ConflictWarning,
+                             WorkingHoursExceptionCreate,
+                             WorkingHoursExceptionPublic)
 
 from datetime import datetime as dt
 from common import (get_owned,
                     log_activity,
                     check_no_active_appointments,
                     restore_entity,
-                    check_no_history)
+                    check_no_history,
+                    find_conflicting_appointments, get_owned_active)
+
+from datetime import datetime as full_dt, time
 
 router = APIRouter()
 
@@ -187,6 +198,181 @@ async def replace_working_hours(
     await db.commit()
     await db.refresh(master, attribute_names=["working_hours"])
     return master
+
+
+@router.post("/{master_id}/time-off", response_model=TimeOffPublic | ConflictWarning, status_code=status.HTTP_201_CREATED)
+async def create_time_off(
+    master_id: int,
+    time_off: TimeOffCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
+    start_dt = full_dt.combine(time_off.start_date, time(0, 0))
+    end_dt = full_dt.combine(time_off.end_date, time(23, 59, 59))
+
+    conflicts = await find_conflicting_appointments(db, master_id, start_dt, end_dt)
+
+    new_time_off = models.TimeOff(
+        master_id=master_id,
+        start_date=start_dt,
+        end_date=end_dt,
+        reason=time_off.reason,
+    )
+    db.add(new_time_off)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="time_off", entity_id=new_time_off.id,
+        details=f"Time off from {time_off.start_date} to {time_off.end_date}",
+    )
+
+    await db.commit()
+
+    if conflicts:
+        return ConflictWarning(conflicting_appointment_ids=conflicts)
+
+    await db.refresh(new_time_off)
+    return TimeOffPublic(
+        id=new_time_off.id,
+        start_date=new_time_off.start_date.date(),
+        end_date=new_time_off.end_date.date(),
+        reason=new_time_off.reason,
+    )
+
+
+@router.get("/{master_id}/time-off", response_model=list[TimeOffPublic])
+async def list_time_off(
+    master_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
+    result = await db.execute(
+        select(models.TimeOff).where(models.TimeOff.master_id == master_id).order_by(models.TimeOff.start_date),
+    )
+    time_offs = result.scalars().all()
+    return [
+        TimeOffPublic(id=t.id, start_date=t.start_date.date(), end_date=t.end_date.date(), reason=t.reason)
+        for t in time_offs
+    ]
+
+
+@router.delete("/{master_id}/time-off/{time_off_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_time_off(
+    master_id: int,
+    time_off_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.TimeOff).where(models.TimeOff.id == time_off_id, models.TimeOff.master_id == master_id),
+    )
+    time_off_obj = result.scalars().first()
+    if not time_off_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time off not found")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="time_off", entity_id=time_off_id,
+    )
+
+    await db.delete(time_off_obj)
+    await db.commit()
+
+
+@router.post("/{master_id}/schedule-exceptions", response_model=WorkingHoursExceptionPublic | ConflictWarning, status_code=status.HTTP_201_CREATED)
+async def create_schedule_exception(
+    master_id: int,
+    exception: WorkingHoursExceptionCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
+    exception_date = full_dt.combine(exception.date, time(0, 0))
+    start_dt = full_dt.combine(exception.date, full_dt.strptime(exception.start_time, "%H:%M").time())
+    end_dt = full_dt.combine(exception.date, full_dt.strptime(exception.end_time, "%H:%M").time())
+
+    day_start = full_dt.combine(exception.date, time(0, 0))
+    day_end = full_dt.combine(exception.date, time(23, 59, 59))
+    all_day_conflicts = await find_conflicting_appointments(db, master_id, day_start, day_end)
+
+    outside_new_hours = [
+        appt_id for appt_id in all_day_conflicts
+    ]
+
+    new_exception = models.WorkingHoursException(
+        master_id=master_id,
+        date=exception_date,
+        start_time=exception.start_time,
+        end_time=exception.end_time,
+    )
+    db.add(new_exception)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="schedule_exception", entity_id=new_exception.id,
+        details=f"Schedule exception on {exception.date}: {exception.start_time}-{exception.end_time}",
+    )
+
+    await db.commit()
+
+    if outside_new_hours:
+        return ConflictWarning(conflicting_appointment_ids=outside_new_hours)
+
+    await db.refresh(new_exception)
+    return new_exception
+
+
+@router.get("/{master_id}/schedule-exceptions", response_model=list[WorkingHoursExceptionPublic])
+async def list_schedule_exceptions(
+    master_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
+    result = await db.execute(
+        select(models.WorkingHoursException)
+        .where(models.WorkingHoursException.master_id == master_id)
+        .order_by(models.WorkingHoursException.date),
+    )
+    return result.scalars().all()
+
+
+@router.delete("/{master_id}/schedule-exceptions/{exception_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_schedule_exception(
+    master_id: int,
+    exception_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(
+        select(models.WorkingHoursException).where(
+            models.WorkingHoursException.id == exception_id,
+            models.WorkingHoursException.master_id == master_id,
+        ),
+    )
+    exception_obj = result.scalars().first()
+    if not exception_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule exception not found")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="schedule_exception", entity_id=exception_id,
+    )
+
+    await db.delete(exception_obj)
+    await db.commit()
 
 
 @router.post("/{master_id}/restore", response_model=MasterPublic)

@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 
 import models
 from db.database import get_db
-from routers.appointments import _check_working_hours, _check_overlap
 from schemas.schemas import (ServicePublic,
                              MasterPublic,
                              AvailableSlot,
@@ -17,9 +16,12 @@ from schemas.schemas import (ServicePublic,
 
 
 from datetime import date as date_type, datetime, timedelta
-from common import log_activity
+from common import log_activity, get_available_intervals
 from datetime import datetime as dt
+
+from routers.appointments import _check_working_hours, _check_overlap
 from rate_limiter import limiter
+
 
 router = APIRouter()
 
@@ -94,19 +96,12 @@ async def get_available_slots(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    day_of_week = date.weekday()
-    wh_result = await db.execute(
-        select(models.WorkingHours).where(
-            models.WorkingHours.master_id == master_id,
-            models.WorkingHours.day_of_week == day_of_week,
-        ),
-    )
-    working_hours = wh_result.scalars().first()
-    if not working_hours:
+    intervals = await get_available_intervals(db, master_id, date)
+    if not intervals:
         return []
 
-    day_start = datetime.combine(date, datetime.strptime(working_hours.start_time, "%H:%M").time())
-    day_end = datetime.combine(date, datetime.strptime(working_hours.end_time, "%H:%M").time())
+    day_start = datetime.combine(date, datetime.min.time())
+    day_end = datetime.combine(date, datetime.max.time().replace(microsecond=0))
 
     appt_result = await db.execute(
         select(models.Appointment).where(
@@ -123,25 +118,22 @@ async def get_available_slots(
     duration = timedelta(minutes=service.duration_minutes)
 
     slots = []
-    current = day_start
-    while current + duration <= day_end:
-        slot_end = current + duration
-        overlaps = any(
-            current < appt.end_time and slot_end > appt.start_time
-            for appt in existing_appointments
-        )
-        if not overlaps:
-            slots.append(AvailableSlot(start_time=current, end_time=slot_end))
-        current += step
+    for start_str, end_str in intervals:
+        interval_start = datetime.combine(date, datetime.strptime(start_str, "%H:%M").time())
+        interval_end = datetime.combine(date, datetime.strptime(end_str, "%H:%M").time())
+
+        current = interval_start
+        while current + duration <= interval_end:
+            slot_end = current + duration
+            overlaps = any(
+                current < appt.end_time and slot_end > appt.start_time
+                for appt in existing_appointments
+            )
+            if not overlaps:
+                slots.append(AvailableSlot(start_time=current, end_time=slot_end))
+            current += step
 
     return slots
-
-
-from datetime import datetime as dt
-
-from routers.appointments import _check_working_hours, _check_overlap
-from rate_limiter import limiter
-from fastapi import Request
 
 
 @router.post("/{slug}/book", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)

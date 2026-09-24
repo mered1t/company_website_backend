@@ -124,6 +124,7 @@ async def create_invitation(
             select(models.Master).where(
                 models.Master.id == invitation.master_id,
                 models.Master.organization_id == organization_id,
+                models.Master.deleted_at.is_(None),
             ),
         )
         if not result.scalars().first():

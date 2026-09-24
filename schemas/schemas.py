@@ -142,6 +142,51 @@ class MasterPublic(MasterBase):
     services: list[ServicePublic] = []
 
 
+class TimeOffCreate(BaseModel):
+    start_date: date
+    end_date: date
+    reason: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def check_dates(self) -> "TimeOffCreate":
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date")
+        return self
+
+
+class TimeOffPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    start_date: date
+    end_date: date
+    reason: str | None
+
+
+class WorkingHoursExceptionCreate(BaseModel):
+    date: date
+    start_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    end_time: str = Field(pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+    @model_validator(mode="after")
+    def check_times(self) -> "WorkingHoursExceptionCreate":
+        if self.start_time >= self.end_time:
+            raise ValueError("start_time must be earlier than end_time")
+        return self
+
+
+class WorkingHoursExceptionPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: date
+    start_time: str
+    end_time: str
+
+
+class ConflictWarning(BaseModel):
+    conflicting_appointment_ids: list[int]
+
 
 class AppointmentBase(BaseModel):
     client_id: int

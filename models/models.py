@@ -82,6 +82,8 @@ class Master(Base):
 
     organization: Mapped["Organization"] = relationship(back_populates="masters")
     working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
+    time_off: Mapped[list["TimeOff"]] = relationship(back_populates="master", cascade="all, delete-orphan")
+    working_hours_exceptions: Mapped[list["WorkingHoursException"]] = relationship(back_populates="master", cascade="all, delete-orphan")
     services: Mapped[list["Service"]] = relationship(secondary="master_services")
 
 
@@ -104,6 +106,33 @@ class WorkingHours(Base):
     end_time: Mapped[str] = mapped_column(String(5), nullable=False)    # "18:00"
 
     master: Mapped["Master"] = relationship(back_populates="working_hours")
+
+
+class TimeOff(Base):
+    __tablename__ = "time_off"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    master: Mapped["Master"] = relationship(back_populates="time_off")
+
+
+class WorkingHoursException(Base):
+    __tablename__ = "working_hours_exceptions"
+    __table_args__ = (UniqueConstraint("master_id", "date", "start_time", name="uq_master_exception_slot"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    start_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    master: Mapped["Master"] = relationship(back_populates="working_hours_exceptions")
 
 
 class Appointment(Base):
