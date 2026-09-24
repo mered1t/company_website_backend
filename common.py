@@ -7,7 +7,7 @@ import secrets
 import re
 import models
 
-from datetime import datetime, UTC
+from datetime import datetime, UTC, date, timedelta
 
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
@@ -168,3 +168,14 @@ async def get_available_intervals(db: AsyncSession, master_id: int, target_date)
     )
     working_hours = wh_result.scalars().all()
     return [(wh.start_time, wh.end_time) for wh in working_hours]
+
+
+async def check_booking_horizon(db: AsyncSession, organization_id: int, target_date) -> None:
+    org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
+    org = org_result.scalars().first()
+    max_date = date.today() + timedelta(days=org.booking_horizon_days)
+    if target_date > max_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot book more than {org.booking_horizon_days} days in advance",
+        )

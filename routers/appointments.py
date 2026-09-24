@@ -20,19 +20,16 @@ router = APIRouter()
 async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
     intervals = await get_available_intervals(db, master_id, start_time.date())
     if not intervals:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master does not work on this day")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Master does not work on this day")
 
     start_str = start_time.strftime("%H:%M")
     end_str = end_time.strftime("%H:%M")
 
     fits = any(start_str >= s and end_str <= e for s, e in intervals)
     if not fits:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment time is outside master's working hours")
-
-    start_str = start_time.strftime("%H:%M")
-    end_str = end_time.strftime("%H:%M")
-    if start_str < working_hours.start_time or end_str > working_hours.end_time:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment time is outside master's working hours")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Appointment time is outside master's working hours")
 
 
 async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time, exclude_id: int | None = None):
