@@ -1,10 +1,9 @@
 from fastapi.middleware.cors import CORSMiddleware
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 
 from contextlib import asynccontextmanager
 
-from db.database import Base, engine
+from db.database import Base, engine, get_db
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public
 
 from slowapi import _rate_limit_exceeded_handler
@@ -12,6 +11,9 @@ from slowapi.errors import RateLimitExceeded
 
 from rate_limiter import limiter
 
+from sqlalchemy import text
+from typing import Annotated
+from sqlalchemy.ext.asyncio import AsyncSession
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -45,3 +47,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health", tags=["health"])
+async def health_check(db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception:
+        raise HTTPException(status_code=503, detail={"status": "error", "database": "unavailable"})
