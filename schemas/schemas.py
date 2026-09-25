@@ -21,6 +21,7 @@ class UserPublic(BaseModel):
 
 class UserPrivate(UserPublic):
     email: EmailStr
+    email_verified: bool
 
 
 class UserUpdate(BaseModel):
@@ -285,6 +286,14 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class RevenueResponse(BaseModel):

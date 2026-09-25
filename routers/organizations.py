@@ -108,14 +108,24 @@ async def list_my_organizations(
     response_model=InvitationPublic,
     status_code=status.HTTP_201_CREATED,
 )
+
+
 @limiter.limit("10/hour")
 async def create_invitation(
     request: Request,
     organization_id: int,
     invitation: InvitationCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
+
+    if not current_user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before inviting team members",
+        )
+
     if invitation.role == "master" and invitation.master_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="master_id is required when inviting a master")
 

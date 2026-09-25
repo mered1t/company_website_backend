@@ -33,3 +33,18 @@ def send_password_reset_email(to_email: str, token: str) -> None:
             <p>This link is valid for 30 minutes. If you didn't request this, you can ignore this email.</p>
         """,
     })
+
+
+def send_verification_email(to_email: str, token: str) -> None:
+    verify_url = f"https://koracrm.com/verify-email?token={token}"
+
+    resend.Emails.send({
+        "from": "onboarding@resend.dev",
+        "to": to_email,
+        "subject": "Confirm your email",
+        "html": f"""
+            <p>Please confirm your email address to complete your registration.</p>
+            <p><a href="{verify_url}">Click here to verify your email</a></p>
+            <p>This link is valid for 24 hours.</p>
+        """,
+    })

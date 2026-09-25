@@ -4,4 +4,5 @@ from models.models import (User, Client, Service,
                            Membership, MembershipRole,
                            Invitation, PasswordResetToken,
                            RefreshToken, ActivityLog, MasterService,
-                           TimeOff, WorkingHoursException)
+                           TimeOff, WorkingHoursException,
+                           EmailVerificationToken)

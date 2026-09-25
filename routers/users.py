@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from auth.auth import hash_password, CurrentUser, create_refresh_token
@@ -18,13 +18,16 @@ from schemas.schemas import (
     Token,
     ForgotPasswordRequest,
     ResetPasswordRequest,
-    RefreshRequest,)
+    RefreshRequest,
+    VerifyEmailRequest,
+    ResendVerificationRequest)
 
 from rate_limiter import limiter
 
 import secrets
 from datetime import datetime as dt, timedelta
-from email_service import send_password_reset_email
+from email_service import send_password_reset_email, send_verification_email
+
 
 router = APIRouter()
 
@@ -58,8 +61,23 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
         password_hash=hash_password(user.password),
     )
     db.add(new_user)
+    await db.flush()
+
+    token = secrets.token_urlsafe(32)
+    verification_token = models.EmailVerificationToken(
+        user_id=new_user.id,
+        token=token,
+        expires_at=dt.now() + timedelta(hours=24),
+    )
+    db.add(verification_token)
     await db.commit()
     await db.refresh(new_user)
+
+    try:
+        send_verification_email(to_email=new_user.email, token=token)
+    except Exception:
+        pass
+
     return new_user
 
 
@@ -202,6 +220,23 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    owner_check = await db.execute(
+        select(models.Membership).where(
+            models.Membership.user_id == user_id,
+            models.Membership.role == models.MembershipRole.owner,
+        ),
+    )
+    if owner_check.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete account while you own an organization. Transfer ownership or delete the organization first.",
+        )
+
+    await db.execute(delete(models.RefreshToken).where(models.RefreshToken.user_id == user_id))
+    await db.execute(delete(models.PasswordResetToken).where(models.PasswordResetToken.user_id == user_id))
+    await db.execute(delete(models.EmailVerificationToken).where(models.EmailVerificationToken.user_id == user_id))
+    await db.execute(delete(models.Membership).where(models.Membership.user_id == user_id))
+
     await db.delete(user)
     await db.commit()
 
@@ -239,3 +274,55 @@ async def logout(
     if refresh_token:
         refresh_token.revoked = True
         await db.commit()
+
+
+@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+async def verify_email(
+    payload: VerifyEmailRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.EmailVerificationToken).where(models.EmailVerificationToken.token == payload.token),
+    )
+    verification_token = result.scalars().first()
+
+    if not verification_token or verification_token.used or verification_token.expires_at < dt.now():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    user_result = await db.execute(select(models.User).where(models.User.id == verification_token.user_id))
+    user = user_result.scalars().first()
+
+    user.email_verified = True
+    verification_token.used = True
+
+    await db.commit()
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")
+async def resend_verification(
+    request: Request,
+    payload: ResendVerificationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.User).where(func.lower(models.User.email) == payload.email.lower()),
+    )
+    user = result.scalars().first()
+
+    if user and not user.email_verified:
+        token = secrets.token_urlsafe(32)
+        verification_token = models.EmailVerificationToken(
+            user_id=user.id,
+            token=token,
+            expires_at=dt.now() + timedelta(hours=24),
+        )
+        db.add(verification_token)
+        await db.commit()
+
+        try:
+            send_verification_email(to_email=user.email, token=token)
+        except Exception:
+            pass
+
+    # Всегда одинаковый ответ, независимо от результата
