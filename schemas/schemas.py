@@ -11,6 +11,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(min_length=8)
 
+    @model_validator(mode="after")
+    def check_password_strength(self) -> "UserCreate":
+        if not any(c.isupper() for c in self.password):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in self.password):
+            raise ValueError("Password must contain at least one digit")
+        return self
+
 
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -286,6 +294,14 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8)
+
+    @model_validator(mode="after")
+    def check_password_strength(self) -> "ResetPasswordRequest":
+        if not any(c.isupper() for c in self.new_password):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in self.new_password):
+            raise ValueError("Password must contain at least one digit")
+        return self
 
 
 class VerifyEmailRequest(BaseModel):
