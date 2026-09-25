@@ -15,11 +15,24 @@ from sqlalchemy import text
 from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import sentry_sdk
+from config import settings
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     yield
     # Shutdown
     await engine.dispose()
+
+
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=1.0,
+        environment="production",
+    )
+
 
 app = FastAPI(lifespan=lifespan)
 

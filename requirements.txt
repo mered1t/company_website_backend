@@ -25,3 +25,4 @@ pwdlib[argon2]
 python-multipart
 resend
 slowapi
+sentry-sdk[fastapi]

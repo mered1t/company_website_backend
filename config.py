@@ -12,5 +12,6 @@ class Settings(BaseSettings):
     database_url: str
     access_token_expire_minutes: int = 30
     resend_api_key: str
+    sentry_dsn: str | None = None
 
 settings = Settings() #type: ignore[call-arg] # Loaded from env file
