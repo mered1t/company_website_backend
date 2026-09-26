@@ -181,6 +181,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     booking_horizon_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")

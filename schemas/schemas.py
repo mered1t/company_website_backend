@@ -237,6 +237,7 @@ class AppointmentWithDetails(AppointmentPublic):
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
+    timezone: str | None = None
 
 
 class OrganizationPublic(BaseModel):

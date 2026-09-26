@@ -157,7 +157,8 @@ async def delete_client(
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
 
-    await check_no_active_appointments(db, "client_id", client_id, "client")
+    await check_no_active_appointments(db, "client_id", client_id,
+                                       "client", membership.organization_id)
 
     client.deleted_at = dt.now()
 

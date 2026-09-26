@@ -8,6 +8,7 @@ import re
 import models
 
 from datetime import datetime, UTC, date, timedelta
+from zoneinfo import ZoneInfo
 
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
@@ -78,16 +79,18 @@ async def log_activity(
     db.add(log_entry)
 
 
-async def check_no_active_appointments(db: AsyncSession, field_name: str, entity_id: int, entity_label: str) -> None:
+async def check_no_active_appointments(db: AsyncSession, field_name: str, entity_id: int, entity_label: str, organization_id: int) -> None:
     field = getattr(models.Appointment, field_name)
+    org_now = await get_org_now(db, organization_id)
     result = await db.execute(
         select(models.Appointment).where(
             field == entity_id,
             models.Appointment.status == "scheduled",
             models.Appointment.deleted_at.is_(None),
-            models.Appointment.start_time > datetime.now(UTC).replace(tzinfo=None),
+            models.Appointment.start_time > org_now,
         ),
     )
+    
     if result.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -173,9 +176,27 @@ async def get_available_intervals(db: AsyncSession, master_id: int, target_date)
 async def check_booking_horizon(db: AsyncSession, organization_id: int, target_date) -> None:
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
     org = org_result.scalars().first()
-    max_date = date.today() + timedelta(days=org.booking_horizon_days)
+    org_now = await get_org_now(db, organization_id)
+    max_date = org_now.date() + timedelta(days=org.booking_horizon_days)
     if target_date > max_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot book more than {org.booking_horizon_days} days in advance",
         )
+
+
+async def get_org_timezone(db: AsyncSession, organization_id: int) -> str:
+    result = await db.execute(select(models.Organization.timezone).where(models.Organization.id == organization_id))
+    tz = result.scalar()
+    return tz or "UTC"
+
+
+def to_org_local(utc_dt: datetime, tz_name: str) -> datetime:
+    aware_utc = utc_dt.replace(tzinfo=ZoneInfo("UTC"))
+    local = aware_utc.astimezone(ZoneInfo(tz_name))
+    return local.replace(tzinfo=None)
+
+
+async def get_org_now(db: AsyncSession, organization_id: int) -> datetime:
+    tz_name = await get_org_timezone(db, organization_id)
+    return to_org_local(datetime.now(UTC), tz_name)

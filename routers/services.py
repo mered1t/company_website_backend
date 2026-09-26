@@ -137,7 +137,8 @@ async def delete_service(
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
-    await check_no_active_appointments(db, "service_id", service_id, "service")
+    await check_no_active_appointments(db, "service_id", service_id, "service",
+                                       membership.organization_id)
 
     service.deleted_at = dt.now()
 

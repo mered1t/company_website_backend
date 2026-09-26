@@ -55,7 +55,12 @@ async def create_organization(
 ):
     slug = await generate_unique_slug(db, models.Organization, org.name)
 
-    new_org = models.Organization(name=org.name, slug=slug)
+    new_org = models.Organization(
+        name=org.name,
+        slug=slug,
+        timezone=org.timezone or "UTC",
+    )
+    
     db.add(new_org)
     await db.flush()
 

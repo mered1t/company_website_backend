@@ -412,7 +412,8 @@ async def delete_master(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    await check_no_active_appointments(db, "master_id", master_id, "master")
+    await check_no_active_appointments(db, "master_id", master_id, "master",
+                                       membership.organization_id)
 
     master.deleted_at = dt.now()
 

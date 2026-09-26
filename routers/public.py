@@ -16,7 +16,7 @@ from schemas.schemas import (ServicePublic,
 
 
 from datetime import date as date_type, datetime, timedelta
-from common import log_activity, get_available_intervals, check_booking_horizon
+from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
 from datetime import datetime as dt
 
 from routers.appointments import _check_working_hours, _check_overlap
@@ -205,14 +205,16 @@ async def public_create_booking(
     elif client.email is None and booking.client_email is not None:
         client.email = booking.client_email
 
+    org_now = await get_org_now(db, org.id)
     active_count_result = await db.execute(
         select(models.Appointment).where(
             models.Appointment.client_id == client.id,
             models.Appointment.status == "scheduled",
             models.Appointment.deleted_at.is_(None),
-            models.Appointment.start_time > dt.now(),
+            models.Appointment.start_time > org_now,
         ),
     )
+    
     active_appointments = active_count_result.scalars().all()
     if len(active_appointments) >= 3:
         raise HTTPException(
@@ -284,7 +286,8 @@ async def get_available_dates(
     else:
         last_day = date_type(year, month_num + 1, 1) - timedelta(days=1)
 
-    today = date_type.today()
+    org_now = await get_org_now(db, org.id)
+    today = org_now.date()
     max_date = today + timedelta(days=org.booking_horizon_days)
 
     duration = timedelta(minutes=service.duration_minutes)
