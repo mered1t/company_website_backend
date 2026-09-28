@@ -382,6 +382,15 @@ class MasterWorkloadResponse(BaseModel):
     total_revenue: int
 
 
+class UpcomingBirthdayResponse(BaseModel):
+    client_id: int
+    full_name: str
+    phone: str
+    birth_date: date
+    days_until: int
+    turning_age: int
+
+
 class ActivityLogPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

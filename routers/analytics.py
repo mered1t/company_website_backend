@@ -1,7 +1,7 @@
-from datetime import datetime as dt, timedelta
+from datetime import date as date_type, datetime as dt, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from schemas.schemas import (
     InactiveClientResponse,
     PopularServiceResponse,
     MasterWorkloadResponse,
+    UpcomingBirthdayResponse
 )
 
 router = APIRouter()
@@ -178,3 +179,55 @@ async def get_masters_workload(
         {"master_id": r.id, "full_name": r.full_name, "appointments_count": r.appointments_count, "total_revenue": r.total_revenue}
         for r in rows
     ]
+
+
+def _next_birthday(birth: date_type, today: date_type) -> date_type:
+    def in_year(year: int) -> date_type:
+        try:
+            return birth.replace(year=year)
+        except ValueError:  # 29 февраля в невисокосный год
+            return date_type(year, 2, 28)
+
+    candidate = in_year(today.year)
+    if candidate < today:
+        candidate = in_year(today.year + 1)
+    return candidate
+
+
+@router.get("/birthdays", response_model=list[UpcomingBirthdayResponse])
+async def get_birthdays(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[models.Membership,
+    Depends(require_role(models.MembershipRole.owner,
+                         models.MembershipRole.admin))],
+    days: int = Query(default=0, ge=0, le=60),
+):
+    today = (await get_org_now(db, membership.organization_id)).date()
+
+    result = await db.execute(
+        select(models.Client).where(
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+            models.Client.birth_date.is_not(None),
+        ),
+    )
+
+    birthdays = []
+    for client in result.scalars().all():
+        birth = client.birth_date.date() if isinstance(client.birth_date, dt) else client.birth_date
+        next_bd = _next_birthday(birth, today)
+        days_until = (next_bd - today).days
+        if days_until <= days:
+            birthdays.append(
+                UpcomingBirthdayResponse(
+                    client_id=client.id,
+                    full_name=client.full_name,
+                    phone=client.phone,
+                    birth_date=birth,
+                    days_until=days_until,
+                    turning_age=next_bd.year - birth.year,
+                ),
+            )
+
+    birthdays.sort(key=lambda b: (b.days_until, b.full_name))
+    return birthdays
