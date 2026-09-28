@@ -74,6 +74,8 @@ async def get_available_slots(
 ):
     org = await get_organization_by_slug(slug, db)
 
+    org_now = await get_org_now(db, org.id)
+
     await check_booking_horizon(db, org.id, date)
 
     service_result = await db.execute(
@@ -131,7 +133,7 @@ async def get_available_slots(
                 current < appt.end_time and slot_end > appt.start_time
                 for appt in existing_appointments
             )
-            if not overlaps:
+            if not overlaps and current > org_now:
                 slots.append(AvailableSlot(start_time=current, end_time=slot_end))
             current += step
 
@@ -147,6 +149,8 @@ async def public_create_booking(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org = await get_organization_by_slug(slug, db)
+
+    org_now = await get_org_now(db, org.id)
 
     await check_booking_horizon(db, org.id, booking.start_time.date())
 
@@ -173,6 +177,9 @@ async def public_create_booking(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
     start_time = booking.start_time.replace(tzinfo=None)
+    if start_time <= org_now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot book a time in the past")
+
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
     await _check_working_hours(db, booking.master_id, start_time, end_time)
@@ -205,7 +212,6 @@ async def public_create_booking(
     elif client.email is None and booking.client_email is not None:
         client.email = booking.client_email
 
-    org_now = await get_org_now(db, org.id)
     active_count_result = await db.execute(
         select(models.Appointment).where(
             models.Appointment.client_id == client.id,
@@ -214,7 +220,7 @@ async def public_create_booking(
             models.Appointment.start_time > org_now,
         ),
     )
-    
+
     active_appointments = active_count_result.scalars().all()
     if len(active_appointments) >= 3:
         raise HTTPException(
@@ -327,7 +333,7 @@ async def get_available_dates(
                         current < appt.end_time and slot_end > appt.start_time
                         for appt in existing_appointments
                     )
-                    if not overlaps:
+                    if not overlaps and current > org_now:
                         found_slot = True
                         break
                     current += step

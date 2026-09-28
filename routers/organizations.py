@@ -13,7 +13,7 @@ from schemas.schemas import (OrganizationCreate,
                              InvitationCreate,
                              InvitationPublic,
                              OrganizationWithRole,
-                             MemberPublic, ActivityLogPublic)
+                             MemberPublic, ActivityLogPublic, OrganizationUpdate)
 
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
@@ -60,7 +60,7 @@ async def create_organization(
         slug=slug,
         timezone=org.timezone or "UTC",
     )
-    
+
     db.add(new_org)
     await db.flush()
 
@@ -82,6 +82,32 @@ async def create_organization(
     return new_org
 
 
+@router.patch("/{organization_id}", response_model=OrganizationPublic)
+async def update_organization(
+    organization_id: int,
+    org_update: OrganizationUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
+    org = result.scalars().first()
+
+    update_data = org_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(org, field, value)
+
+    await log_activity(
+        db, organization_id, current_user.id,
+        action="updated", entity_type="organization", entity_id=organization_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
+
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
 @router.get("", response_model=list[OrganizationWithRole])
 async def list_my_organizations(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -100,6 +126,8 @@ async def list_my_organizations(
             name=org.name,
             slug=org.slug,
             created_at=org.created_at,
+            timezone=org.timezone,
+            booking_horizon_days=org.booking_horizon_days,
             role=role.value,
             master_id=master_id,
         )

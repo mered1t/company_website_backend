@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentMembership, require_role
+from common import get_org_now
 from db.database import get_db
 
 from schemas.schemas import (
@@ -85,7 +86,8 @@ async def get_inactive_clients(
                          models.MembershipRole.admin))],
     days: int = 30,
 ):
-    cutoff = dt.now() - timedelta(days=days)
+    org_now = await get_org_now(db, membership.organization_id)
+    cutoff = org_now - timedelta(days=days)
 
     result = await db.execute(
         select(

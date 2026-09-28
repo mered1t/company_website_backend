@@ -2,6 +2,24 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+
+def _validate_timezone(value: str | None) -> str | None:
+    if value is None:
+        return value
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("Invalid timezone, use IANA name like 'Europe/Tirane'")
+    return value
+
 
 class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=50)
@@ -239,6 +257,22 @@ class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     timezone: str | None = None
 
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, v):
+        return _validate_timezone(v)
+
+
+class OrganizationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    timezone: str | None = None
+    booking_horizon_days: int | None = Field(default=None, ge=1, le=365)
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, v):
+        return _validate_timezone(v)
+
 
 class OrganizationPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -247,6 +281,8 @@ class OrganizationPublic(BaseModel):
     name: str
     slug: str
     created_at: datetime
+    timezone: str
+    booking_horizon_days: int
 
 
 class OrganizationWithRole(OrganizationPublic):
