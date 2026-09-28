@@ -1,14 +1,9 @@
 from datetime import date, datetime
-
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
-
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-
-from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+import re
 
 
 def _validate_timezone(value: str | None) -> str | None:
@@ -21,6 +16,19 @@ def _validate_timezone(value: str | None) -> str | None:
     return value
 
 
+SLUG_PATTERN = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
+
+def _validate_slug(value: str) -> str:
+    if not (3 <= len(value) <= 100):
+        raise ValueError("Slug must be between 3 and 100 characters")
+    if not SLUG_PATTERN.match(value):
+        raise ValueError(
+            "Slug can only contain lowercase latin letters, digits and single hyphens "
+            "(no leading/trailing/double hyphens)"
+        )
+    return value
+
+
 class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=50)
     email: EmailStr = Field(max_length=120)
@@ -28,6 +36,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8)
+    accept_terms: bool
 
     @model_validator(mode="after")
     def check_password_strength(self) -> "UserCreate":
@@ -35,6 +44,12 @@ class UserCreate(UserBase):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.isdigit() for c in self.password):
             raise ValueError("Password must contain at least one digit")
+        return self
+
+    @model_validator(mode="after")
+    def validate_terms_accepted(self):
+        if not self.accept_terms:
+            raise ValueError("You must accept the Terms of Service and Privacy Policy to register")
         return self
 
 
@@ -48,6 +63,7 @@ class UserPublic(BaseModel):
 class UserPrivate(UserPublic):
     email: EmailStr
     email_verified: bool
+    terms_accepted_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
@@ -264,14 +280,20 @@ class OrganizationCreate(BaseModel):
 
 
 class OrganizationUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=150)
+    name: str | None = None
     timezone: str | None = None
-    booking_horizon_days: int | None = Field(default=None, ge=1, le=365)
+    booking_horizon_days: int | None = None
+    slug: str | None = None
 
     @field_validator("timezone")
     @classmethod
-    def check_timezone(cls, v):
-        return _validate_timezone(v)
+    def validate_tz(cls, v):
+        return _validate_timezone(v) if v is not None else v
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug_field(cls, v):
+        return _validate_slug(v) if v is not None else v
 
 
 class OrganizationPublic(BaseModel):

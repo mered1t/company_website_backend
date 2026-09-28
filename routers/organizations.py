@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentUser, CurrentMembership, require_role
-from common import generate_unique_slug, generate_invitation_token, log_activity
+from common import generate_unique_slug, generate_invitation_token, log_activity, get_owned
 from db.database import get_db
+from schemas import schemas
 from schemas.schemas import (OrganizationCreate,
                              OrganizationPublic,
                              InvitationCreate,
@@ -82,26 +83,44 @@ async def create_organization(
     return new_org
 
 
-@router.patch("/{organization_id}", response_model=OrganizationPublic)
+@router.patch("/{organization_id}", response_model=schemas.OrganizationPublic)
 async def update_organization(
     organization_id: int,
-    org_update: OrganizationUpdate,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    payload: schemas.OrganizationUpdate,
+    membership: models.Membership = Depends(require_role("owner", "admin")),
+    db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
-    org = result.scalars().first()
+    org = await db.get(models.Organization, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    update_data = payload.model_dump(exclude_unset=True)
 
-    update_data = org_update.model_dump(exclude_unset=True)
+    if "slug" in update_data:
+        if membership.role != "owner":
+            raise HTTPException(403, "Only the owner can change the organization's URL slug")
+        new_slug = update_data["slug"]
+        if new_slug != org.slug:
+            existing = await db.execute(
+                select(models.Organization).where(
+                    models.Organization.slug == new_slug,
+                    models.Organization.id != organization_id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise HTTPException(400, "This slug is already taken")
+
+    changed_fields = []
     for field, value in update_data.items():
-        setattr(org, field, value)
+        if getattr(org, field) != value:
+            setattr(org, field, value)
+            changed_fields.append(field)
 
-    await log_activity(
-        db, organization_id, current_user.id,
-        action="updated", entity_type="organization", entity_id=organization_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+    if changed_fields:
+        await log_activity(
+            db, membership.organization_id, membership.user_id,
+            "updated", "organization", org.id,
+            f"Updated fields: {', '.join(changed_fields)}",
+        )
 
     await db.commit()
     await db.refresh(org)

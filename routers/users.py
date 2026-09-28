@@ -25,7 +25,8 @@ from schemas.schemas import (
 from rate_limiter import limiter
 
 import secrets
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt, timedelta, datetime
+from datetime import UTC
 from email_service import send_password_reset_email, send_verification_email
 
 
@@ -59,6 +60,7 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
         username=user.username,
         email=user.email.lower(),
         password_hash=hash_password(user.password),
+        terms_accepted_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(new_user)
     await db.flush()
@@ -79,6 +81,17 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
         pass
 
     return new_user
+
+
+@router.post("/me/accept-terms", response_model=UserPrivate)
+async def accept_terms(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    current_user.terms_accepted_at = datetime.now(UTC).replace(tzinfo=None)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
 
 
 @router.get("/me", response_model=UserPrivate)
