@@ -19,7 +19,7 @@ from datetime import date as date_type, datetime, timedelta
 from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
 from datetime import datetime as dt
 
-from routers.appointments import _check_working_hours, _check_overlap
+from routers.appointments import _check_working_hours, _check_overlap, _check_master_provides_service
 from rate_limiter import limiter
 
 
@@ -100,6 +100,8 @@ async def get_available_slots(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
+    await _check_master_provides_service(db, master_id, service.id)
+
     intervals = await get_available_intervals(db, master_id, date)
     if not intervals:
         return []
@@ -175,6 +177,8 @@ async def public_create_booking(
     master = master_result.scalars().first()
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
+
+    await _check_master_provides_service(db, booking.master_id, service.id)
 
     start_time = booking.start_time.replace(tzinfo=None)
     if start_time <= org_now:
@@ -284,6 +288,8 @@ async def get_available_dates(
     master = master_result.scalars().first()
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
+
+    await _check_master_provides_service(db, master_id, service.id)
 
     year, month_num = map(int, month.split("-"))
     first_day = date_type(year, month_num, 1)

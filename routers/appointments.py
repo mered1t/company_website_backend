@@ -47,6 +47,19 @@ async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time,
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master already has an appointment at this time")
 
 
+async def _check_master_provides_service(db: AsyncSession, master_id: int, service_id: int):
+    result = await db.execute(
+        select(models.MasterService.service_id).where(models.MasterService.master_id == master_id),
+    )
+    provided_ids = set(result.scalars().all())
+    # пустой список услуг у мастера = делает все услуги (как в админской записи)
+    if provided_ids and service_id not in provided_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This master does not provide this service",
+        )
+
+
 def _check_can_modify(membership: models.Membership, appointment: models.Appointment):
     if membership.role == models.MembershipRole.master and appointment.master_id != membership.master_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only modify your own appointments")
