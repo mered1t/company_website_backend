@@ -109,6 +109,16 @@ class ClientPublic(ClientBase):
     created_at: datetime
 
 
+class ClientImportError(BaseModel):
+    row: int
+    error: str
+
+
+class ClientImportResult(BaseModel):
+    created: int
+    skipped_duplicates: int
+    errors: list[ClientImportError]
+
 
 class ServiceBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
