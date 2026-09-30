@@ -62,6 +62,18 @@ app.add_middleware(
 )
 
 
+from fastapi import Request
+
+@app.get("/debug/ip", include_in_schema=False)
+async def debug_ip(request: Request):
+    return {
+        "client_host": request.client.host if request.client else None,
+        "x_forwarded_for": request.headers.get("x-forwarded-for"),
+        "true_client_ip": request.headers.get("true-client-ip"),
+        "cf_connecting_ip": request.headers.get("cf-connecting-ip"),
+    }
+
+
 @app.get("/health", tags=["health"])
 async def health_check(db: Annotated[AsyncSession, Depends(get_db)]):
     try:
