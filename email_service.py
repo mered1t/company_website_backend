@@ -2,7 +2,16 @@ import resend
 
 from config import settings
 
+from datetime import datetime
+from jinja2 import Environment, FileSystemLoader
+
 resend.api_key = settings.resend_api_key
+
+_env = Environment(loader=FileSystemLoader("templates/emails"))
+
+def render_email(template_name: str, **context) -> str:
+    template = _env.get_template(template_name)
+    return template.render(app_name="Твоё название CRM", current_year=datetime.now().year, **context)
 
 
 def send_invitation_email(to_email: str, organization_name: str, token: str) -> None:
@@ -12,26 +21,25 @@ def send_invitation_email(to_email: str, organization_name: str, token: str) -> 
         "from": "onboarding@resend.dev",
         "to": to_email,
         "subject": f"You've been invited to join {organization_name}",
-        "html": f"""
-            <p>You've been invited to join <b>{organization_name}</b> on our CRM platform.</p>
-            <p><a href="{accept_url}">Click here to accept the invitation</a></p>
-            <p>This link is valid for 7 days.</p>
-        """,
+        "html": render_email(
+            "invitation.html",
+            organization_name=organization_name,
+            accept_url=accept_url,
+        ),
     })
 
 
 def send_password_reset_email(to_email: str, token: str) -> None:
-    reset_url = f"https://vashcrm.com/reset-password?token={token}"
+    reset_url = f"https://koracrm.com/reset-password?token={token}"
 
     resend.Emails.send({
         "from": "onboarding@resend.dev",
         "to": to_email,
         "subject": "Reset your password",
-        "html": f"""
-            <p>You requested a password reset.</p>
-            <p><a href="{reset_url}">Click here to set a new password</a></p>
-            <p>This link is valid for 30 minutes. If you didn't request this, you can ignore this email.</p>
-        """,
+        "html": render_email(
+            "password_reset.html",
+            reset_url=reset_url,
+        ),
     })
 
 
@@ -42,9 +50,8 @@ def send_verification_email(to_email: str, token: str) -> None:
         "from": "onboarding@resend.dev",
         "to": to_email,
         "subject": "Confirm your email",
-        "html": f"""
-            <p>Please confirm your email address to complete your registration.</p>
-            <p><a href="{verify_url}">Click here to verify your email</a></p>
-            <p>This link is valid for 24 hours.</p>
-        """,
+        "html": render_email(
+            "verify_email.html",
+            verify_url=verify_url,
+        ),
     })

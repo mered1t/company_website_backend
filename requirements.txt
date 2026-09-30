@@ -26,3 +26,4 @@ python-multipart
 resend
 slowapi
 sentry-sdk[fastapi]
+jinja2
