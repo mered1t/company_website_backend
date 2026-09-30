@@ -109,6 +109,21 @@ class ClientPublic(ClientBase):
     created_at: datetime
 
 
+class ClientCommentCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class ClientCommentPublic(BaseModel):
+    id: int
+    content: str
+    author_username: str | None
+    created_at: datetime
+
+
+class ClientCommentUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class ClientImportError(BaseModel):
     row: int
     error: str

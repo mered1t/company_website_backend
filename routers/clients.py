@@ -20,7 +20,10 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientUpdate,
                              ActivityLogPublic,
                              ClientImportError,
-                             ClientImportResult)
+                             ClientImportResult,
+                             ClientCommentCreate,
+                             ClientCommentPublic,
+                             ClientCommentUpdate)
 
 from datetime import datetime as dt
 from common import (get_owned,
@@ -368,3 +371,136 @@ async def get_client_activity(
         .limit(limit),
     )
     return result.scalars().all()
+
+
+@router.post("/{client_id}/comments", response_model=ClientCommentPublic, status_code=status.HTTP_201_CREATED)
+async def add_client_comment(
+    client_id: int,
+    payload: ClientCommentCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+):
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
+
+    comment = models.ClientComment(
+        client_id=client_id,
+        user_id=current_user.id,
+        content=payload.content,
+    )
+    db.add(comment)
+    await db.flush()
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="client_comment", entity_id=comment.id,
+        details=f"Added comment to client #{client_id}",
+    )
+
+    await db.commit()
+    await db.refresh(comment)
+
+    return ClientCommentPublic(
+        id=comment.id,
+        content=comment.content,
+        author_username=current_user.username,
+        created_at=comment.created_at,
+    )
+
+
+@router.get("/{client_id}/comments", response_model=list[ClientCommentPublic])
+async def list_client_comments(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
+
+    result = await db.execute(
+        select(models.ClientComment, models.User.username)
+        .outerjoin(models.User, models.User.id == models.ClientComment.user_id)
+        .where(models.ClientComment.client_id == client_id)
+        .order_by(models.ClientComment.created_at.desc()),
+    )
+    return [
+        ClientCommentPublic(id=c.id, content=c.content, author_username=username, created_at=c.created_at)
+        for c, username in result.all()
+    ]
+
+
+@router.patch("/{client_id}/comments/{comment_id}", response_model=ClientCommentPublic)
+async def update_client_comment(
+    client_id: int,
+    comment_id: int,
+    payload: ClientCommentUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+):
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
+
+    result = await db.execute(
+        select(models.ClientComment).where(
+            models.ClientComment.id == comment_id,
+            models.ClientComment.client_id == client_id,
+        ),
+    )
+    comment = result.scalars().first()
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    is_owner_or_admin = membership.role in (models.MembershipRole.owner, models.MembershipRole.admin)
+    is_author = comment.user_id == current_user.id
+    if not (is_owner_or_admin or is_author):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own comments")
+
+    comment.content = payload.content
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="client_comment", entity_id=comment.id,
+        details=f"Edited comment on client #{client_id}",
+    )
+
+    await db.commit()
+    await db.refresh(comment)
+
+    author_result = await db.execute(select(models.User.username).where(models.User.id == comment.user_id))
+    author_username = author_result.scalar()
+
+    return ClientCommentPublic(
+        id=comment.id,
+        content=comment.content,
+        author_username=author_username,
+        created_at=comment.created_at,
+    )
+
+
+@router.delete("/{client_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_client_comment(
+    client_id: int,
+    comment_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+):
+    await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
+
+    result = await db.execute(
+        select(models.ClientComment).where(
+            models.ClientComment.id == comment_id,
+            models.ClientComment.client_id == client_id,
+        ),
+    )
+    comment = result.scalars().first()
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="deleted", entity_type="client_comment", entity_id=comment_id,
+        details=f"Deleted comment on client #{client_id}",
+    )
+
+    await db.delete(comment)
+    await db.commit()
