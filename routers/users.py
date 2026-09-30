@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from auth.auth import hash_password, CurrentUser, create_refresh_token
@@ -212,16 +212,42 @@ async def update_user(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
         user.username = user_update.username
 
+    new_verification_token = None
     if user_update.email is not None and user_update.email.lower() != user.email.lower():
         existing = await db.execute(
             select(models.User).where(func.lower(models.User.email) == user_update.email.lower()),
         )
         if existing.scalars().first():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
         user.email = user_update.email.lower()
+        user.email_verified = False
+
+        # старые токены подтверждения относились к прежнему адресу, гасим их
+        await db.execute(
+            update(models.EmailVerificationToken)
+            .where(
+                models.EmailVerificationToken.user_id == user.id,
+                models.EmailVerificationToken.used.is_(False),
+            )
+            .values(used=True),
+        )
+        new_verification_token = secrets.token_urlsafe(32)
+        db.add(models.EmailVerificationToken(
+            user_id=user.id,
+            token=new_verification_token,
+            expires_at=dt.now() + timedelta(hours=24),
+        ))
 
     await db.commit()
     await db.refresh(user)
+
+    if new_verification_token:
+        try:
+            send_verification_email(to_email=user.email, token=new_verification_token)
+        except Exception:
+            logger.exception("Failed to send verification email after email change")
+
     return user
 
 

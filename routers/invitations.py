@@ -14,6 +14,14 @@ from schemas.schemas import InvitationCreate, InvitationPreview, InvitationPubli
 router = APIRouter()
 
 
+def _require_verified_email(user: models.User) -> None:
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your email to use invitations",
+        )
+
+
 from sqlalchemy.orm import selectinload
 
 
@@ -43,6 +51,8 @@ async def list_pending_invitations(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
+    _require_verified_email(current_user)
+
     result = await db.execute(
         select(models.Invitation).where(
             models.Invitation.email == current_user.email,
@@ -59,6 +69,8 @@ async def accept_invitation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
+    _require_verified_email(current_user)
+
     result = await db.execute(
         select(models.Invitation).where(models.Invitation.id == invitation_id),
     )
@@ -108,6 +120,8 @@ async def decline_invitation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
+    _require_verified_email(current_user)
+    
     result = await db.execute(
         select(models.Invitation).where(models.Invitation.id == invitation_id),
     )
