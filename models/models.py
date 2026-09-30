@@ -55,8 +55,8 @@ class ClientComment(Base):
     __tablename__ = "client_comments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
     
@@ -100,15 +100,15 @@ class MasterService(Base):
     __table_args__ = (UniqueConstraint("master_id", "service_id", name="uq_master_service"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
-    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id", ondelete="CASCADE"), nullable=False, index=True)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True)
 
 
 class WorkingHours(Base):
     __tablename__ = "working_hours"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id", ondelete="CASCADE"), nullable=False, index=True)
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)  # 0 = monday, 6 = sunday
     start_time: Mapped[str] = mapped_column(String(5), nullable=False)  # "09:00"
     end_time: Mapped[str] = mapped_column(String(5), nullable=False)    # "18:00"
@@ -120,7 +120,7 @@ class TimeOff(Base):
     __tablename__ = "time_off"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id", ondelete="CASCADE"), nullable=False, index=True)
     start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -134,7 +134,7 @@ class WorkingHoursException(Base):
     __table_args__ = (UniqueConstraint("master_id", "date", "start_time", name="uq_master_exception_slot"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("masters.id", ondelete="CASCADE"), nullable=False, index=True)
     date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     start_time: Mapped[str] = mapped_column(String(5), nullable=False)
     end_time: Mapped[str] = mapped_column(String(5), nullable=False)
@@ -211,7 +211,7 @@ class Membership(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
-    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id"), nullable=True)
+    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id", ondelete="SET NULL"), nullable=True)
     role: Mapped[MembershipRole] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
@@ -225,7 +225,7 @@ class Invitation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
-    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id"), nullable=True)
+    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id", ondelete="SET NULL"), nullable=True)
     email: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     role: Mapped[MembershipRole] = mapped_column(nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
@@ -240,7 +240,7 @@ class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(default=False)
@@ -251,7 +251,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked: Mapped[bool] = mapped_column(default=False)
@@ -263,7 +263,7 @@ class ActivityLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -275,7 +275,7 @@ class EmailVerificationToken(Base):
     __tablename__ = "email_verification_tokens"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(default=False)
