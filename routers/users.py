@@ -28,9 +28,12 @@ import secrets
 from datetime import datetime as dt, timedelta, datetime
 from datetime import UTC
 from email_service import send_password_reset_email, send_verification_email
+import logging
 
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=UserPrivate, status_code=status.HTTP_201_CREATED)
@@ -78,7 +81,7 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
     try:
         send_verification_email(to_email=new_user.email, token=token)
     except Exception:
-        pass
+        logger.exception("Failed to send verification email")
 
     return new_user
 
@@ -154,7 +157,10 @@ async def forgot_password(
         db.add(reset_token)
         await db.commit()
 
-        send_password_reset_email(to_email=user.email, token=token)
+        try:
+            send_password_reset_email(to_email=user.email, token=token)
+        except Exception:
+            logger.exception("Failed to send password reset email")
 
     # Всегда одинаковый ответ, независимо от того, найден email или нет
 
