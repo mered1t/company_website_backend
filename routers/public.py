@@ -53,7 +53,7 @@ async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSe
     org = await get_organization_by_slug(slug, db)
     result = await db.execute(
         select(models.Master)
-        .options(selectinload(models.Master.working_hours))
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
         .where(
             models.Master.organization_id == org.id,
             models.Master.deleted_at.is_(None),

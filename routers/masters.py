@@ -270,6 +270,9 @@ async def delete_time_off(
     current_user: CurrentUser,
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
+
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
     result = await db.execute(
         select(models.TimeOff).where(models.TimeOff.id == time_off_id, models.TimeOff.master_id == master_id),
     )
@@ -356,6 +359,8 @@ async def delete_schedule_exception(
     current_user: CurrentUser,
     membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
 ):
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
     result = await db.execute(
         select(models.WorkingHoursException).where(
             models.WorkingHoursException.id == exception_id,
@@ -391,7 +396,7 @@ async def restore_master(
     )
 
     await db.commit()
-    await db.refresh(master, attribute_names=["working_hours"])
+    await db.refresh(master, attribute_names=["working_hours", "services"])
     return master
 
 

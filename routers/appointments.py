@@ -189,10 +189,28 @@ async def update_appointment(
     membership: CurrentMembership,
 ):
     appointment = await get_owned_active(db, models.Appointment, appointment_id,
-                                         membership.organization_id,"Appointment")
+                                         membership.organization_id, "Appointment")
     _check_can_modify(membership, appointment)
 
     update_data = appointment_update.model_dump(exclude_unset=True)
+
+    # Проверяем, что переданные id принадлежат ЭТОЙ организации
+    if "client_id" in update_data:
+        await get_owned_active(db, models.Client, update_data["client_id"],
+                               membership.organization_id, "Client")
+
+    if "service_id" in update_data:
+        await get_owned_active(db, models.Service, update_data["service_id"],
+                               membership.organization_id, "Service")
+
+    if "master_id" in update_data:
+        if membership.role == models.MembershipRole.master:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Masters cannot reassign appointments to another master",
+            )
+        await get_owned_active(db, models.Master, update_data["master_id"],
+                               membership.organization_id, "Master")
 
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
 
@@ -203,10 +221,25 @@ async def update_appointment(
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
 
     if recheck_needed:
-        service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
+        service = await get_owned_active(db, models.Service, appointment.service_id,
+                                         membership.organization_id, "Service")
+
+        master_result = await db.execute(
+            select(models.Master)
+            .options(selectinload(models.Master.services))
+            .where(models.Master.id == appointment.master_id),
+        )
+        master_obj = master_result.scalars().first()
+        if master_obj.services and service not in master_obj.services:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This master does not provide this service",
+            )
+
         appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
         await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
-        await _check_overlap(db, appointment.master_id, appointment.start_time, appointment.end_time, exclude_id=appointment.id)
+        await _check_overlap(db, appointment.master_id, appointment.start_time,
+                             appointment.end_time, exclude_id=appointment.id)
 
     await log_activity(
         db, membership.organization_id, current_user.id,
