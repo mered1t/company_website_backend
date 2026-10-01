@@ -20,11 +20,10 @@ from datetime import date as date_type, datetime, timedelta
 from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
 from datetime import datetime as dt
 
-from routers.appointments import (_check_working_hours,
-                                  _check_overlap,
-                                  _check_master_provides_service,
-                                  _is_overlap_violation,
-                                  MASTER_BUSY)
+from services.booking import (
+    check_master_provides_service, check_slot_free, create_appointment_record,
+)
+
 from rate_limiter import limiter
 
 
@@ -105,7 +104,7 @@ async def get_available_slots(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    await _check_master_provides_service(db, master_id, service.id)
+    await check_master_provides_service(db, master_id, service.id)
 
     intervals = await get_available_intervals(db, master_id, date)
     if not intervals:
@@ -183,7 +182,7 @@ async def public_create_booking(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    await _check_master_provides_service(db, booking.master_id, service.id)
+    await check_master_provides_service(db, booking.master_id, service.id)
 
     start_time = booking.start_time.replace(tzinfo=None)
     if start_time <= org_now:
@@ -191,8 +190,7 @@ async def public_create_booking(
 
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
-    await _check_working_hours(db, booking.master_id, start_time, end_time)
-    await _check_overlap(db, booking.master_id, start_time, end_time)
+    await check_slot_free(db, booking.master_id, start_time, end_time)
 
     client_result = await db.execute(
         select(models.Client).where(
@@ -235,25 +233,16 @@ async def public_create_booking(
             detail="You already have 3 upcoming appointments. Please complete or cancel one before booking another.",
         )
 
-    new_appointment = models.Appointment(
+    new_appointment = await create_appointment_record(
+        db,
         organization_id=org.id,
         client_id=client.id,
-        service_id=booking.service_id,
+        service=service,
         master_id=booking.master_id,
         start_time=start_time,
         end_time=end_time,
-        price=service.price,
-        currency=org.currency,
         notes=booking.notes,
     )
-    db.add(new_appointment)
-    try:
-        await db.flush()
-    except IntegrityError as e:
-        await db.rollback()
-        if _is_overlap_violation(e):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
-        raise
 
     await log_activity(
         db, org.id, None,
@@ -300,7 +289,7 @@ async def get_available_dates(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    await _check_master_provides_service(db, master_id, service.id)
+    await check_master_provides_service(db, master_id, service.id)
 
     year, month_num = map(int, month.split("-"))
     first_day = date_type(year, month_num, 1)

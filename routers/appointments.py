@@ -13,6 +13,11 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
+from services.booking import (
+    check_master_provides_service, check_slot_free,
+    create_appointment_record, persist,
+)
+
 from common import (get_owned,
                     get_owned_active,
                     log_activity,
@@ -21,58 +26,6 @@ from common import (get_owned,
                     get_org_currency)
 
 router = APIRouter()
-
-
-OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
-MASTER_BUSY = "Master already has an appointment at this time"
-
-
-def _is_overlap_violation(error: IntegrityError) -> bool:
-    return OVERLAP_CONSTRAINT in str(error.orig)
-
-
-async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
-    intervals = await get_available_intervals(db, master_id, start_time.date())
-    if not intervals:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Master does not work on this day")
-
-    start_str = start_time.strftime("%H:%M")
-    end_str = end_time.strftime("%H:%M")
-
-    fits = any(start_str >= s and end_str <= e for s, e in intervals)
-    if not fits:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Appointment time is outside master's working hours")
-
-
-async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time, exclude_id: int | None = None):
-    query = select(models.Appointment).where(
-        models.Appointment.master_id == master_id,
-        models.Appointment.status != "cancelled",
-        models.Appointment.deleted_at.is_(None),
-        models.Appointment.start_time < end_time,
-        models.Appointment.end_time > start_time,
-    )
-    if exclude_id is not None:
-        query = query.where(models.Appointment.id != exclude_id)
-
-    result = await db.execute(query)
-    if result.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
-
-
-async def _check_master_provides_service(db: AsyncSession, master_id: int, service_id: int):
-    result = await db.execute(
-        select(models.MasterService.service_id).where(models.MasterService.master_id == master_id),
-    )
-    provided_ids = set(result.scalars().all())
-    # пустой список услуг у мастера = делает все услуги (как в админской записи)
-    if provided_ids and service_id not in provided_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This master does not provide this service",
-        )
 
 
 def _check_can_modify(membership: models.Membership, appointment: models.Appointment):
@@ -97,47 +50,22 @@ async def create_appointment(
     service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
-    master_services_result = await db.execute(
-        select(models.Master)
-        .options(selectinload(models.Master.services))
-        .where(models.Master.id == master_id),
-    )
-    master_obj = master_services_result.scalars().first()
-
-    if master_obj.services and service not in master_obj.services:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This master does not provide this service",
-        )
+    await check_master_provides_service(db, master_id, service.id)
 
     start_time = appointment.start_time.replace(tzinfo=None)
     end_time = start_time + timedelta(minutes=service.duration_minutes)
+    await check_slot_free(db, master_id, start_time, end_time)
 
-    await _check_working_hours(db, master_id, start_time, end_time)
-    await _check_overlap(db, master_id, start_time, end_time)
-
-    currency = await get_org_currency(db, membership.organization_id)
-
-    new_appointment = models.Appointment(
+    new_appointment = await create_appointment_record(
+        db,
         organization_id=membership.organization_id,
         client_id=appointment.client_id,
-        service_id=appointment.service_id,
+        service=service,
         master_id=master_id,
         start_time=start_time,
         end_time=end_time,
-        price=service.price,
-        currency=currency,
         notes=appointment.notes,
     )
-
-    db.add(new_appointment)
-    try:
-        await db.flush()
-    except IntegrityError as e:
-        await db.rollback()
-        if _is_overlap_violation(e):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
-        raise
 
     await log_activity(
         db, membership.organization_id, current_user.id,
@@ -253,8 +181,6 @@ async def update_appointment(
 
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
 
-    # ВСЕ запросы к базе делаем ДО изменения объекта, иначе автоflush
-    # отправит в базу «половину» изменений (новое начало + старый конец).
     new_service = None
     new_currency = None
     if recheck_needed:
@@ -263,18 +189,7 @@ async def update_appointment(
 
         new_service = await get_owned_active(db, models.Service, target_service_id,
                                              membership.organization_id, "Service")
-
-        master_result = await db.execute(
-            select(models.Master)
-            .options(selectinload(models.Master.services))
-            .where(models.Master.id == target_master_id),
-        )
-        master_obj = master_result.scalars().first()
-        if master_obj.services and new_service not in master_obj.services:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This master does not provide this service",
-            )
+        await check_master_provides_service(db, target_master_id, new_service.id)
 
         if "service_id" in update_data:
             new_currency = await get_org_currency(db, membership.organization_id)
@@ -285,30 +200,23 @@ async def update_appointment(
     if appointment.start_time.tzinfo is not None:
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
 
-    try:
-        if recheck_needed:
-            appointment.end_time = appointment.start_time + timedelta(minutes=new_service.duration_minutes)
-            if "service_id" in update_data:
-                appointment.price = new_service.price
-                appointment.currency = new_currency
 
-            await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
-            await _check_overlap(db, appointment.master_id, appointment.start_time,
-                                 appointment.end_time, exclude_id=appointment.id)
+    if recheck_needed:
+        appointment.end_time = appointment.start_time + timedelta(minutes=new_service.duration_minutes)
+        if "service_id" in update_data:
+            appointment.price = new_service.price
+            appointment.currency = new_currency
 
-        await log_activity(
-            db, membership.organization_id, current_user.id,
-            action="updated", entity_type="appointment", entity_id=appointment_id,
-            details=f"Updated fields: {', '.join(update_data.keys())}",
-        )
+        await check_slot_free(db, appointment.master_id, appointment.start_time,
+                                  appointment.end_time, exclude_id=appointment.id)
 
-        await db.commit()
-    except IntegrityError as e:
-        await db.rollback()
-        if _is_overlap_violation(e):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
-        raise
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="appointment", entity_id=appointment_id,
+        details=f"Updated fields: {', '.join(update_data.keys())}",
+    )
 
+    await persist(db, commit=True)
     await db.refresh(appointment)
     return appointment
 
@@ -328,14 +236,8 @@ async def restore_appointment(
         details="Restored appointment",
     )
 
-    try:
-        await db.commit()
-    except IntegrityError as e:
-        await db.rollback()
-        if _is_overlap_violation(e):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="Cannot restore: the master already has an appointment at this time")
-        raise
+    await persist(db, commit=True,
+                  detail="Cannot restore: the master already has an appointment at this time")
     await db.refresh(appointment)
     return appointment
 
