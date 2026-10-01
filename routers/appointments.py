@@ -253,6 +253,32 @@ async def update_appointment(
 
     recheck_needed = any(k in update_data for k in ("start_time", "master_id", "service_id"))
 
+    # ВСЕ запросы к базе делаем ДО изменения объекта, иначе автоflush
+    # отправит в базу «половину» изменений (новое начало + старый конец).
+    new_service = None
+    new_currency = None
+    if recheck_needed:
+        target_service_id = update_data.get("service_id", appointment.service_id)
+        target_master_id = update_data.get("master_id", appointment.master_id)
+
+        new_service = await get_owned_active(db, models.Service, target_service_id,
+                                             membership.organization_id, "Service")
+
+        master_result = await db.execute(
+            select(models.Master)
+            .options(selectinload(models.Master.services))
+            .where(models.Master.id == target_master_id),
+        )
+        master_obj = master_result.scalars().first()
+        if master_obj.services and new_service not in master_obj.services:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This master does not provide this service",
+            )
+
+        if "service_id" in update_data:
+            new_currency = await get_org_currency(db, membership.organization_id)
+
     for field, value in update_data.items():
         setattr(appointment, field, value)
 
@@ -261,27 +287,11 @@ async def update_appointment(
 
     try:
         if recheck_needed:
-            service = await get_owned_active(db, models.Service, appointment.service_id,
-                                             membership.organization_id, "Service")
-
+            appointment.end_time = appointment.start_time + timedelta(minutes=new_service.duration_minutes)
             if "service_id" in update_data:
-                appointment.price = service.price  # услугу сменили, значит и цена новая
-                appointment.currency = await get_org_currency(db, membership.organization_id)
+                appointment.price = new_service.price
+                appointment.currency = new_currency
 
-            master_result = await db.execute(
-                select(models.Master)
-                .options(selectinload(models.Master.services))
-                .where(models.Master.id == appointment.master_id),
-            )
-            
-            master_obj = master_result.scalars().first()
-            if master_obj.services and service not in master_obj.services:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="This master does not provide this service",
-                )
-
-            appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
             await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
             await _check_overlap(db, appointment.master_id, appointment.start_time,
                                  appointment.end_time, exclude_id=appointment.id)

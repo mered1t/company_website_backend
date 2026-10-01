@@ -210,14 +210,8 @@ async def public_create_booking(
             phone=booking.client_phone,
             email=booking.client_email,
         )
-        db.add(new_appointment)
-        try:
-            await db.flush()
-        except IntegrityError as e:
-            await db.rollback()
-            if _is_overlap_violation(e):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
-            raise
+        db.add(client)
+        await db.flush()
 
         await log_activity(
             db, org.id, None,
@@ -235,9 +229,7 @@ async def public_create_booking(
             models.Appointment.start_time > org_now,
         ),
     )
-
-    active_appointments = active_count_result.scalars().all()
-    if len(active_appointments) >= 3:
+    if len(active_count_result.scalars().all()) >= 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You already have 3 upcoming appointments. Please complete or cancel one before booking another.",
@@ -255,7 +247,13 @@ async def public_create_booking(
         notes=booking.notes,
     )
     db.add(new_appointment)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        if _is_overlap_violation(e):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
+        raise
 
     await log_activity(
         db, org.id, None,
