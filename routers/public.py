@@ -18,7 +18,12 @@ from schemas.schemas import (ServicePublic,
 
 from datetime import date as date_type, datetime, timedelta
 from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
-from datetime import datetime as dt
+from enums import AppointmentStatus
+
+from services.booking import (
+    check_master_provides_service, check_slot_free, create_appointment_record,
+    load_service_and_master, get_free_slots,
+)
 
 from services.booking import (
     check_master_provides_service, check_slot_free, create_appointment_record,
@@ -77,73 +82,13 @@ async def get_available_slots(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org = await get_organization_by_slug(slug, db)
-
     org_now = await get_org_now(db, org.id)
-
     await check_booking_horizon(db, org.id, date)
 
-    service_result = await db.execute(
-        select(models.Service).where(
-            models.Service.id == service_id,
-            models.Service.organization_id == org.id,
-            models.Service.deleted_at.is_(None),
-        ),
-    )
-    service = service_result.scalars().first()
-    if not service:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    service, _ = await load_service_and_master(db, org.id, service_id, master_id)
 
-    master_result = await db.execute(
-        select(models.Master).where(
-            models.Master.id == master_id,
-            models.Master.organization_id == org.id,
-            models.Master.deleted_at.is_(None),
-        ),
-    )
-    master = master_result.scalars().first()
-    if not master:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
-
-    await check_master_provides_service(db, master_id, service.id)
-
-    intervals = await get_available_intervals(db, master_id, date)
-    if not intervals:
-        return []
-
-    day_start = datetime.combine(date, datetime.min.time())
-    day_end = datetime.combine(date, datetime.max.time().replace(microsecond=0))
-
-    appt_result = await db.execute(
-        select(models.Appointment).where(
-            models.Appointment.master_id == master_id,
-            models.Appointment.status != "cancelled",
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.start_time < day_end,
-            models.Appointment.end_time > day_start,
-        ),
-    )
-    existing_appointments = appt_result.scalars().all()
-
-    step = timedelta(minutes=15)
-    duration = timedelta(minutes=service.duration_minutes)
-
-    slots = []
-    for start_str, end_str in intervals:
-        interval_start = datetime.combine(date, datetime.strptime(start_str, "%H:%M").time())
-        interval_end = datetime.combine(date, datetime.strptime(end_str, "%H:%M").time())
-
-        current = interval_start
-        while current + duration <= interval_end:
-            slot_end = current + duration
-            overlaps = any(
-                current < appt.end_time and slot_end > appt.start_time
-                for appt in existing_appointments
-            )
-            if not overlaps and current > org_now:
-                slots.append(AvailableSlot(start_time=current, end_time=slot_end))
-            current += step
-
-    return slots
+    slots = await get_free_slots(db, master_id, service.duration_minutes, date, org_now)
+    return [AvailableSlot(start_time=s, end_time=e) for s, e in slots]
 
 
 @router.post("/{slug}/book", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)
@@ -160,29 +105,7 @@ async def public_create_booking(
 
     await check_booking_horizon(db, org.id, booking.start_time.date())
 
-    service_result = await db.execute(
-        select(models.Service).where(
-            models.Service.id == booking.service_id,
-            models.Service.organization_id == org.id,
-            models.Service.deleted_at.is_(None),
-        ),
-    )
-    service = service_result.scalars().first()
-    if not service:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-    master_result = await db.execute(
-        select(models.Master).where(
-            models.Master.id == booking.master_id,
-            models.Master.organization_id == org.id,
-            models.Master.deleted_at.is_(None),
-        ),
-    )
-    master = master_result.scalars().first()
-    if not master:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
-
-    await check_master_provides_service(db, booking.master_id, service.id)
+    service, master = await load_service_and_master(db, org.id, booking.service_id, booking.master_id)
 
     start_time = booking.start_time.replace(tzinfo=None)
     if start_time <= org_now:
@@ -222,7 +145,7 @@ async def public_create_booking(
     active_count_result = await db.execute(
         select(models.Appointment).where(
             models.Appointment.client_id == client.id,
-            models.Appointment.status == "scheduled",
+            models.Appointment.status == AppointmentStatus.scheduled,
             models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time > org_now,
         ),
@@ -266,30 +189,7 @@ async def get_available_dates(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org = await get_organization_by_slug(slug, db)
-
-    service_result = await db.execute(
-        select(models.Service).where(
-            models.Service.id == service_id,
-            models.Service.organization_id == org.id,
-            models.Service.deleted_at.is_(None),
-        ),
-    )
-    service = service_result.scalars().first()
-    if not service:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-    master_result = await db.execute(
-        select(models.Master).where(
-            models.Master.id == master_id,
-            models.Master.organization_id == org.id,
-            models.Master.deleted_at.is_(None),
-        ),
-    )
-    master = master_result.scalars().first()
-    if not master:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
-
-    await check_master_provides_service(db, master_id, service.id)
+    service, _ = await load_service_and_master(db, org.id, service_id, master_id)
 
     year, month_num = map(int, month.split("-"))
     first_day = date_type(year, month_num, 1)
@@ -302,53 +202,13 @@ async def get_available_dates(
     today = org_now.date()
     max_date = today + timedelta(days=org.booking_horizon_days)
 
-    duration = timedelta(minutes=service.duration_minutes)
-    step = timedelta(minutes=15)
-
     available_dates = []
     current_date = max(first_day, today)
     end_date = min(last_day, max_date)
 
     while current_date <= end_date:
-        intervals = await get_available_intervals(db, master_id, current_date)
-
-        if intervals:
-            day_start = datetime.combine(current_date, datetime.min.time())
-            day_end = datetime.combine(current_date, datetime.max.time().replace(microsecond=0))
-
-            appt_result = await db.execute(
-                select(models.Appointment).where(
-                    models.Appointment.master_id == master_id,
-                    models.Appointment.status != "cancelled",
-                    models.Appointment.deleted_at.is_(None),
-                    models.Appointment.start_time < day_end,
-                    models.Appointment.end_time > day_start,
-                ),
-            )
-            existing_appointments = appt_result.scalars().all()
-
-            found_slot = False
-            for start_str, end_str in intervals:
-                interval_start = datetime.combine(current_date, datetime.strptime(start_str, "%H:%M").time())
-                interval_end = datetime.combine(current_date, datetime.strptime(end_str, "%H:%M").time())
-
-                current = interval_start
-                while current + duration <= interval_end:
-                    slot_end = current + duration
-                    overlaps = any(
-                        current < appt.end_time and slot_end > appt.start_time
-                        for appt in existing_appointments
-                    )
-                    if not overlaps and current > org_now:
-                        found_slot = True
-                        break
-                    current += step
-                if found_slot:
-                    break
-
-            if found_slot:
-                available_dates.append(current_date)
-
+        if await get_free_slots(db, master_id, service.duration_minutes, current_date, org_now, first_only=True):
+            available_dates.append(current_date)
         current_date += timedelta(days=1)
 
     return available_dates

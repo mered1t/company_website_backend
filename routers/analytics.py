@@ -9,6 +9,7 @@ import models
 from auth.auth import CurrentMembership, require_role
 from common import get_org_now, get_org_currency
 from db.database import get_db
+from enums import AppointmentStatus
 
 from schemas.schemas import (
     RevenueResponse,
@@ -37,7 +38,7 @@ async def get_revenue(
         select(func.coalesce(func.sum(models.Appointment.price), 0))
         .where(
             models.Appointment.organization_id == membership.organization_id,
-            models.Appointment.status == "completed",
+            models.Appointment.status == AppointmentStatus.completed,
             models.Appointment.start_time >= date_from,
             models.Appointment.start_time <= date_to,
             models.Appointment.currency == currency,
@@ -68,7 +69,7 @@ async def get_top_clients(
         .join(models.Appointment, models.Appointment.client_id == models.Client.id)
         .where(
             models.Client.organization_id == membership.organization_id,
-            models.Appointment.status == "completed",
+            models.Appointment.status == AppointmentStatus.completed,
             models.Appointment.currency == currency,
         )
         .group_by(models.Client.id, models.Client.full_name)
@@ -103,7 +104,7 @@ async def get_inactive_clients(
         .outerjoin(
             models.Appointment,
             (models.Appointment.client_id == models.Client.id)
-            & (models.Appointment.status == "completed"),
+            & (models.Appointment.status == AppointmentStatus.completed),
         )
         .where(models.Client.organization_id == membership.organization_id)
         .group_by(models.Client.id, models.Client.full_name)
@@ -137,7 +138,7 @@ async def get_popular_services(
         .join(models.Appointment, models.Appointment.service_id == models.Service.id)
         .where(
             models.Service.organization_id == membership.organization_id,
-            models.Appointment.status == "completed",
+            models.Appointment.status == AppointmentStatus.completed,
             models.Appointment.currency == currency,
         )
         .group_by(models.Service.id, models.Service.name)
@@ -173,7 +174,7 @@ async def get_masters_workload(
         .outerjoin(
             models.Appointment,
             (models.Appointment.master_id == models.Master.id)
-            & (models.Appointment.status == "completed")
+            & (models.Appointment.status == AppointmentStatus.completed)
             & (models.Appointment.currency == currency)
             & (models.Appointment.start_time >= date_from)
             & (models.Appointment.start_time <= date_to),

@@ -9,6 +9,7 @@ import models
 
 from datetime import datetime, UTC, date, timedelta
 from zoneinfo import ZoneInfo
+from enums import AppointmentStatus
 
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):
@@ -85,7 +86,7 @@ async def check_no_active_appointments(db: AsyncSession, field_name: str, entity
     result = await db.execute(
         select(models.Appointment).where(
             field == entity_id,
-            models.Appointment.status == "scheduled",
+            models.Appointment.status == AppointmentStatus.scheduled,
             models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time > org_now,
         ),
@@ -128,7 +129,7 @@ async def find_conflicting_appointments(db: AsyncSession, master_id: int, start_
     result = await db.execute(
         select(models.Appointment.id).where(
             models.Appointment.master_id == master_id,
-            models.Appointment.status == "scheduled",
+            models.Appointment.status == AppointmentStatus.scheduled,
             models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time < end_dt,
             models.Appointment.end_time > start_dt,

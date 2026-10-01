@@ -10,6 +10,7 @@ from sqlalchemy import (DDL,
 
 from enums import AppointmentStatus
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from enums import AppointmentStatus
 
 from db.database import Base
 from enum import Enum
@@ -165,7 +166,7 @@ class Appointment(Base):
     master_id: Mapped[int] = mapped_column(ForeignKey("masters.id"), nullable=False, index=True)
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=AppointmentStatus.scheduled)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -3,7 +3,7 @@
 Любая запись (админка, публичная страница) проходит через эти функции,
 чтобы правила не расходились.
 """
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from common import get_available_intervals, get_org_currency
+from common import get_available_intervals, get_org_currency, get_owned_active
 from enums import AppointmentStatus
 
 OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
@@ -122,3 +122,63 @@ async def create_appointment_record(
     db.add(appointment)
     await persist(db, commit=False)
     return appointment
+
+
+SLOT_STEP = timedelta(minutes=15)
+
+
+async def load_service_and_master(db: AsyncSession, organization_id: int, service_id: int, master_id: int):
+    """Услуга и мастер этой организации (404, если нет) + мастер оказывает эту услугу (400, если нет)."""
+    service = await get_owned_active(db, models.Service, service_id, organization_id, "Service")
+    master = await get_owned_active(db, models.Master, master_id, organization_id, "Master")
+    await check_master_provides_service(db, master_id, service_id)
+    return service, master
+
+
+async def get_busy_appointments(db: AsyncSession, master_id: int, day: date) -> list[models.Appointment]:
+    day_start = datetime.combine(day, datetime.min.time())
+    day_end = datetime.combine(day, datetime.max.time().replace(microsecond=0))
+    result = await db.execute(
+        select(models.Appointment).where(
+            models.Appointment.master_id == master_id,
+            models.Appointment.status != AppointmentStatus.cancelled,
+            models.Appointment.deleted_at.is_(None),
+            models.Appointment.start_time < day_end,
+            models.Appointment.end_time > day_start,
+        ),
+    )
+    return result.scalars().all()
+
+
+async def get_free_slots(
+    db: AsyncSession,
+    master_id: int,
+    duration_minutes: int,
+    day: date,
+    now: datetime,
+    *,
+    first_only: bool = False,
+) -> list[tuple[datetime, datetime]]:
+    """Свободные слоты мастера на день. first_only=True останавливается на первом найденном."""
+    intervals = await get_available_intervals(db, master_id, day)
+    if not intervals:
+        return []
+
+    busy = await get_busy_appointments(db, master_id, day)
+    duration = timedelta(minutes=duration_minutes)
+
+    slots: list[tuple[datetime, datetime]] = []
+    for start_str, end_str in intervals:
+        interval_start = datetime.combine(day, datetime.strptime(start_str, "%H:%M").time())
+        interval_end = datetime.combine(day, datetime.strptime(end_str, "%H:%M").time())
+
+        current = interval_start
+        while current + duration <= interval_end:
+            slot_end = current + duration
+            is_free = not any(current < a.end_time and slot_end > a.start_time for a in busy)
+            if is_free and current > now:
+                slots.append((current, slot_end))
+                if first_only:
+                    return slots
+            current += SLOT_STEP
+    return slots
