@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index
+from sqlalchemy import DDL, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
@@ -178,6 +178,23 @@ class Appointment(Base):
     @property
     def client_name(self) -> str:
         return self.client.full_name
+
+    # Защита от двойной записи: один мастер не может иметь две пересекающиеся активные записи.
+    # Правило создаётся вместе с таблицей (тесты), в боевой базе это делает миграция.
+event.listen(
+    Appointment.__table__,
+    "after_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS btree_gist").execute_if(dialect="postgresql"),
+)
+event.listen(
+    Appointment.__table__,
+    "after_create",
+    DDL(
+        "ALTER TABLE appointments ADD CONSTRAINT appointments_no_master_overlap "
+        "EXCLUDE USING gist (master_id WITH =, tsrange(start_time, end_time) WITH &&) "
+        "WHERE (status <> 'cancelled' AND deleted_at IS NULL)"
+    ).execute_if(dialect="postgresql"),
+)
 
 
 class MembershipRole(str, Enum):

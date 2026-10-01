@@ -19,7 +19,11 @@ from datetime import date as date_type, datetime, timedelta
 from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
 from datetime import datetime as dt
 
-from routers.appointments import _check_working_hours, _check_overlap, _check_master_provides_service
+from routers.appointments import (_check_working_hours,
+                                  _check_overlap,
+                                  _check_master_provides_service,
+                                  _is_overlap_violation,
+                                  MASTER_BUSY)
 from rate_limiter import limiter
 
 
@@ -205,8 +209,14 @@ async def public_create_booking(
             phone=booking.client_phone,
             email=booking.client_email,
         )
-        db.add(client)
-        await db.flush()
+        db.add(new_appointment)
+        try:
+            await db.flush()
+        except IntegrityError as e:
+            await db.rollback()
+            if _is_overlap_violation(e):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
+            raise
 
         await log_activity(
             db, org.id, None,

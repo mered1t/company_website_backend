@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
@@ -15,6 +16,14 @@ from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpd
 from common import get_owned, get_owned_active, log_activity, restore_entity, get_available_intervals
 
 router = APIRouter()
+
+
+OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
+MASTER_BUSY = "Master already has an appointment at this time"
+
+
+def _is_overlap_violation(error: IntegrityError) -> bool:
+    return OVERLAP_CONSTRAINT in str(error.orig)
 
 
 async def _check_working_hours(db: AsyncSession, master_id: int, start_time, end_time):
@@ -36,6 +45,7 @@ async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time,
     query = select(models.Appointment).where(
         models.Appointment.master_id == master_id,
         models.Appointment.status != "cancelled",
+        models.Appointment.deleted_at.is_(None),
         models.Appointment.start_time < end_time,
         models.Appointment.end_time > start_time,
     )
@@ -44,7 +54,7 @@ async def _check_overlap(db: AsyncSession, master_id: int, start_time, end_time,
 
     result = await db.execute(query)
     if result.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master already has an appointment at this time")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
 
 
 async def _check_master_provides_service(db: AsyncSession, master_id: int, service_id: int):
@@ -111,7 +121,13 @@ async def create_appointment(
         notes=appointment.notes,
     )
     db.add(new_appointment)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        if _is_overlap_violation(e):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
+        raise
 
     await log_activity(
         db, membership.organization_id, current_user.id,
@@ -233,34 +249,41 @@ async def update_appointment(
     if appointment.start_time.tzinfo is not None:
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
 
-    if recheck_needed:
-        service = await get_owned_active(db, models.Service, appointment.service_id,
-                                         membership.organization_id, "Service")
+    try:
+        if recheck_needed:
+            service = await get_owned_active(db, models.Service, appointment.service_id,
+                                             membership.organization_id, "Service")
 
-        master_result = await db.execute(
-            select(models.Master)
-            .options(selectinload(models.Master.services))
-            .where(models.Master.id == appointment.master_id),
-        )
-        master_obj = master_result.scalars().first()
-        if master_obj.services and service not in master_obj.services:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This master does not provide this service",
+            master_result = await db.execute(
+                select(models.Master)
+                .options(selectinload(models.Master.services))
+                .where(models.Master.id == appointment.master_id),
             )
+            master_obj = master_result.scalars().first()
+            if master_obj.services and service not in master_obj.services:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This master does not provide this service",
+                )
 
-        appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
-        await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
-        await _check_overlap(db, appointment.master_id, appointment.start_time,
-                             appointment.end_time, exclude_id=appointment.id)
+            appointment.end_time = appointment.start_time + timedelta(minutes=service.duration_minutes)
+            await _check_working_hours(db, appointment.master_id, appointment.start_time, appointment.end_time)
+            await _check_overlap(db, appointment.master_id, appointment.start_time,
+                                 appointment.end_time, exclude_id=appointment.id)
 
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="appointment", entity_id=appointment_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="appointment", entity_id=appointment_id,
+            details=f"Updated fields: {', '.join(update_data.keys())}",
+        )
 
-    await db.commit()
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if _is_overlap_violation(e):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MASTER_BUSY)
+        raise
+
     await db.refresh(appointment)
     return appointment
 
@@ -280,7 +303,14 @@ async def restore_appointment(
         details="Restored appointment",
     )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if _is_overlap_violation(e):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Cannot restore: the master already has an appointment at this time")
+        raise
     await db.refresh(appointment)
     return appointment
 
