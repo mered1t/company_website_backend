@@ -12,7 +12,8 @@ from schemas.schemas import (ServicePublic,
                              MasterPublic,
                              AvailableSlot,
                              PublicBookingRequest,
-                             AppointmentPublic)
+                             AppointmentPublic,
+                             PublicOrganizationInfo,)
 
 
 from datetime import date as date_type, datetime, timedelta
@@ -250,6 +251,7 @@ async def public_create_booking(
         start_time=start_time,
         end_time=end_time,
         price=service.price,
+        currency=org.currency,
         notes=booking.notes,
     )
     db.add(new_appointment)
@@ -363,3 +365,9 @@ async def get_available_dates(
         current_date += timedelta(days=1)
 
     return available_dates
+
+
+@router.get("/{slug}", response_model=PublicOrganizationInfo)
+@limiter.limit("30/minute")
+async def public_organization_info(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
+    return await get_organization_by_slug(slug, db)

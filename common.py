@@ -90,7 +90,7 @@ async def check_no_active_appointments(db: AsyncSession, field_name: str, entity
             models.Appointment.start_time > org_now,
         ),
     )
-    
+
     if result.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -200,3 +200,10 @@ def to_org_local(utc_dt: datetime, tz_name: str) -> datetime:
 async def get_org_now(db: AsyncSession, organization_id: int) -> datetime:
     tz_name = await get_org_timezone(db, organization_id)
     return to_org_local(datetime.now(UTC), tz_name)
+
+
+async def get_org_currency(db: AsyncSession, organization_id: int) -> str:
+    result = await db.execute(
+        select(models.Organization.currency).where(models.Organization.id == organization_id),
+    )
+    return result.scalar_one()

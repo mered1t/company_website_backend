@@ -60,6 +60,7 @@ async def create_organization(
         name=org.name,
         slug=slug,
         timezone=org.timezone or "UTC",
+        currency=org.currency or "EUR",
     )
 
     db.add(new_org)
@@ -109,6 +110,9 @@ async def update_organization(
             if existing.scalar_one_or_none():
                 raise HTTPException(400, "This slug is already taken")
 
+    if "currency" in update_data and membership.role != "owner":
+        raise HTTPException(403, "Only the owner can change the organization's currency")
+
     changed_fields = []
     for field, value in update_data.items():
         if getattr(org, field) != value:
@@ -147,6 +151,7 @@ async def list_my_organizations(
             created_at=org.created_at,
             timezone=org.timezone,
             booking_horizon_days=org.booking_horizon_days,
+            currency=org.currency,
             role=role.value,
             master_id=master_id,
         )

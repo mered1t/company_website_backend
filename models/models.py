@@ -155,6 +155,7 @@ class Appointment(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
     price: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
@@ -213,6 +214,7 @@ class Organization(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
     timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     booking_horizon_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")

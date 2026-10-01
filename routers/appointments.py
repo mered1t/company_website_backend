@@ -13,7 +13,12 @@ from auth.auth import CurrentMembership, require_role, CurrentUser
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
-from common import get_owned, get_owned_active, log_activity, restore_entity, get_available_intervals
+from common import (get_owned,
+                    get_owned_active,
+                    log_activity,
+                    restore_entity,
+                    get_available_intervals,
+                    get_org_currency)
 
 router = APIRouter()
 
@@ -111,6 +116,8 @@ async def create_appointment(
     await _check_working_hours(db, master_id, start_time, end_time)
     await _check_overlap(db, master_id, start_time, end_time)
 
+    currency = await get_org_currency(db, membership.organization_id)
+
     new_appointment = models.Appointment(
         organization_id=membership.organization_id,
         client_id=appointment.client_id,
@@ -119,6 +126,7 @@ async def create_appointment(
         start_time=start_time,
         end_time=end_time,
         price=service.price,
+        currency=currency,
         notes=appointment.notes,
     )
 
@@ -255,14 +263,17 @@ async def update_appointment(
         if recheck_needed:
             service = await get_owned_active(db, models.Service, appointment.service_id,
                                              membership.organization_id, "Service")
+
             if "service_id" in update_data:
                 appointment.price = service.price  # услугу сменили, значит и цена новая
+                appointment.currency = await get_org_currency(db, membership.organization_id)
 
             master_result = await db.execute(
                 select(models.Master)
                 .options(selectinload(models.Master.services))
                 .where(models.Master.id == appointment.master_id),
             )
+            
             master_obj = master_result.scalars().first()
             if master_obj.services and service not in master_obj.services:
                 raise HTTPException(

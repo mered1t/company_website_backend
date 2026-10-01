@@ -16,6 +16,15 @@ def _validate_timezone(value: str | None) -> str | None:
     return value
 
 
+SUPPORTED_CURRENCIES = ("EUR", "USD", "ALL", "UAH")
+
+def _validate_currency(v: str) -> str:
+    v = v.upper()
+    if v not in SUPPORTED_CURRENCIES:
+        raise ValueError(f"Unsupported currency, use one of: {', '.join(SUPPORTED_CURRENCIES)}")
+    return v
+
+
 SLUG_PATTERN = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 
 def _validate_slug(value: str) -> str:
@@ -284,6 +293,7 @@ class AppointmentPublic(AppointmentBase):
     end_time: datetime
     status: str
     price: int
+    currency: str
     created_at: datetime
 
 class AppointmentWithDetails(AppointmentPublic):
@@ -298,6 +308,12 @@ class AppointmentWithDetails(AppointmentPublic):
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     timezone: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def check_currency(cls, v):
+        return _validate_currency(v) if v is not None else v
 
     @field_validator("timezone")
     @classmethod
@@ -310,6 +326,14 @@ class OrganizationUpdate(BaseModel):
     timezone: str | None = None
     booking_horizon_days: int | None = None
     slug: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency_field(cls, v):
+        if v is None:
+            raise ValueError("currency cannot be null")
+        return _validate_currency(v)
 
     @field_validator("timezone")
     @classmethod
@@ -329,6 +353,17 @@ class OrganizationPublic(BaseModel):
     name: str
     slug: str
     created_at: datetime
+    timezone: str
+    booking_horizon_days: int
+    currency: str
+
+
+class PublicOrganizationInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    slug: str
+    currency: str
     timezone: str
     booking_horizon_days: int
 

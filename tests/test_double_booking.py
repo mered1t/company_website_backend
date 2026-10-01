@@ -15,6 +15,7 @@ def make_appt(org_id, client_id, service_id, master_id, start_h, end_h, **kwargs
         organization_id=org_id, client_id=client_id, service_id=service_id, master_id=master_id,
         start_time=base + timedelta(hours=start_h), end_time=base + timedelta(hours=end_h), **kwargs,
         price=100,
+        currency="EUR",
     )
 
 

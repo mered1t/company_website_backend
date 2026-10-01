@@ -37,6 +37,7 @@ async def make_appointment(db, t, client_id, service_id, master_id):
         master_id=master_id, start_time=datetime(2030, 1, 7, 10, 0),
         end_time=datetime(2030, 1, 7, 11, 0),
         price=100,
+        currency="EUR",
     )
     db.add(appt)
     await db.commit()

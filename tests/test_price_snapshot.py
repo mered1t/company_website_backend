@@ -13,7 +13,9 @@ async def _completed_appointment(api, db, org):
     appt = models.Appointment(
         organization_id=org.org_id, client_id=client_id, service_id=service_id, master_id=master_id,
         start_time=datetime(2030, 1, 7, 10), end_time=datetime(2030, 1, 7, 11),
-        status="completed", price=100,
+        status="completed",
+        price=100,
+        currency="EUR",
     )
     db.add(appt)
     await db.commit()
