@@ -154,6 +154,7 @@ class Appointment(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
@@ -169,7 +170,7 @@ class Appointment(Base):
 
     @property
     def service_price(self) -> int:
-        return self.service.price
+        return self.price
 
     @property
     def master_name(self) -> str:

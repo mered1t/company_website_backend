@@ -118,8 +118,10 @@ async def create_appointment(
         master_id=master_id,
         start_time=start_time,
         end_time=end_time,
+        price=service.price,
         notes=appointment.notes,
     )
+
     db.add(new_appointment)
     try:
         await db.flush()
@@ -253,6 +255,8 @@ async def update_appointment(
         if recheck_needed:
             service = await get_owned_active(db, models.Service, appointment.service_id,
                                              membership.organization_id, "Service")
+            if "service_id" in update_data:
+                appointment.price = service.price  # услугу сменили, значит и цена новая
 
             master_result = await db.execute(
                 select(models.Master)

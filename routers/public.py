@@ -249,6 +249,7 @@ async def public_create_booking(
         master_id=booking.master_id,
         start_time=start_time,
         end_time=end_time,
+        price=service.price,
         notes=booking.notes,
     )
     db.add(new_appointment)

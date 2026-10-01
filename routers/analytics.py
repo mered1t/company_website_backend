@@ -32,9 +32,7 @@ async def get_revenue(
     date_to: dt,
 ):
     result = await db.execute(
-        select(func.coalesce(func.sum(models.Service.price), 0))
-        .select_from(models.Appointment)
-        .join(models.Service, models.Appointment.service_id == models.Service.id)
+        select(func.coalesce(func.sum(models.Appointment.price), 0))
         .where(
             models.Appointment.organization_id == membership.organization_id,
             models.Appointment.status == "completed",
@@ -58,18 +56,17 @@ async def get_top_clients(
         select(
             models.Client.id,
             models.Client.full_name,
-            func.coalesce(func.sum(models.Service.price), 0).label("total_spent"),
+            func.coalesce(func.sum(models.Appointment.price), 0).label("total_spent"),
             func.count(models.Appointment.id).label("visits_count"),
         )
         .select_from(models.Client)
         .join(models.Appointment, models.Appointment.client_id == models.Client.id)
-        .join(models.Service, models.Appointment.service_id == models.Service.id)
         .where(
             models.Client.organization_id == membership.organization_id,
             models.Appointment.status == "completed",
         )
         .group_by(models.Client.id, models.Client.full_name)
-        .order_by(func.sum(models.Service.price).desc())
+        .order_by(func.sum(models.Appointment.price).desc())
         .limit(limit),
     )
     rows = result.all()
@@ -126,7 +123,7 @@ async def get_popular_services(
             models.Service.id,
             models.Service.name,
             func.count(models.Appointment.id).label("times_booked"),
-            func.coalesce(func.sum(models.Service.price), 0).label("total_revenue"),
+            func.coalesce(func.sum(models.Appointment.price), 0).label("total_revenue"),
         )
         .select_from(models.Service)
         .join(models.Appointment, models.Appointment.service_id == models.Service.id)
@@ -159,7 +156,7 @@ async def get_masters_workload(
             models.Master.id,
             models.Master.full_name,
             func.count(models.Appointment.id).label("appointments_count"),
-            func.coalesce(func.sum(models.Service.price), 0).label("total_revenue"),
+            func.coalesce(func.sum(models.Appointment.price), 0).label("total_revenue"),
         )
         .select_from(models.Master)
         .outerjoin(
@@ -169,10 +166,9 @@ async def get_masters_workload(
             & (models.Appointment.start_time >= date_from)
             & (models.Appointment.start_time <= date_to),
         )
-        .outerjoin(models.Service, models.Appointment.service_id == models.Service.id)
         .where(models.Master.organization_id == membership.organization_id)
         .group_by(models.Master.id, models.Master.full_name)
-        .order_by(func.sum(models.Service.price).desc().nulls_last()),
+        .order_by(func.sum(models.Appointment.price).desc().nulls_last()),
     )
     rows = result.all()
     return [

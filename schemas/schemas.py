@@ -283,6 +283,7 @@ class AppointmentPublic(AppointmentBase):
     id: int
     end_time: datetime
     status: str
+    price: int
     created_at: datetime
 
 class AppointmentWithDetails(AppointmentPublic):
