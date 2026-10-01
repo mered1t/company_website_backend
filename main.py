@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import sentry_sdk
 from config import settings
 
+from currencies import CURRENCIES
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -69,3 +71,8 @@ async def health_check(db: Annotated[AsyncSession, Depends(get_db)]):
         return {"status": "ok", "database": "connected"}
     except Exception:
         raise HTTPException(status_code=503, detail={"status": "error", "database": "unavailable"})
+
+
+@app.get("/api/currencies", tags=["currencies"])
+async def list_currencies():
+    return [{"code": code, **info} for code, info in CURRENCIES.items()]

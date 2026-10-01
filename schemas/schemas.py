@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 import re
 
+from currencies import SUPPORTED_CURRENCIES, MAX_PRICE
+
 
 def _validate_timezone(value: str | None) -> str | None:
     if value is None:
@@ -15,8 +17,6 @@ def _validate_timezone(value: str | None) -> str | None:
         raise ValueError("Invalid timezone, use IANA name like 'Europe/Tirane'")
     return value
 
-
-SUPPORTED_CURRENCIES = ("EUR", "USD", "ALL", "UAH")
 
 def _validate_currency(v: str) -> str:
     v = v.upper()
@@ -146,7 +146,7 @@ class ClientImportResult(BaseModel):
 
 class ServiceBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
-    price: int = Field(ge=0)
+    price: int = Field(ge=0, le=MAX_PRICE)
     duration_minutes: int = Field(gt=0)
     description: str | None = None
     photo: str | None = None
@@ -158,7 +158,7 @@ class ServiceCreate(ServiceBase):
 
 class ServiceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
-    price: int | None = Field(default=None, ge=0)
+    price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0)
     description: str | None = None
     photo: str | None = None
