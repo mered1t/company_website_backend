@@ -7,6 +7,8 @@ import re
 
 from currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
+from enums import AppointmentStatus
+
 
 def _validate_timezone(value: str | None) -> str | None:
     if value is None:
@@ -282,7 +284,7 @@ class AppointmentUpdate(BaseModel):
     service_id: int | None = None
     master_id: int | None = None
     start_time: datetime | None = None
-    status: str | None = None
+    status: AppointmentStatus | None = None
     notes: str | None = None
 
 
@@ -291,7 +293,7 @@ class AppointmentPublic(AppointmentBase):
 
     id: int
     end_time: datetime
-    status: str
+    status: AppointmentStatus
     price: int
     currency: str
     created_at: datetime

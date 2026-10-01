@@ -33,6 +33,8 @@ from common import (get_owned,
                     restore_entity,
                     check_no_history)
 
+from enums import AppointmentStatus
+
 router = APIRouter()
 
 
@@ -311,7 +313,7 @@ async def get_client_appointments(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
-    status_filter: str | None = None,
+    status_filter: AppointmentStatus | None = None,
 ):
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 

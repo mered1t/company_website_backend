@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DDL, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index, event
+from sqlalchemy import (DDL,
+                        DateTime,ForeignKey,
+                        Integer,String, Text,
+                        UniqueConstraint,
+                        Index, event, CheckConstraint)
+
+from enums import AppointmentStatus
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
@@ -145,6 +151,12 @@ class WorkingHoursException(Base):
 
 class Appointment(Base):
     __tablename__ = "appointments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('scheduled', 'completed', 'cancelled')",
+            name="ck_appointments_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
