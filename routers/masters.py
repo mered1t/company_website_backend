@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (MasterCreate,
                              MasterPublic,
@@ -36,7 +37,7 @@ async def create_master(
     master: MasterCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     new_master = models.Master(
         organization_id=membership.organization_id,
@@ -126,7 +127,7 @@ async def update_master(
     master_update: MasterUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Master)
@@ -162,9 +163,7 @@ async def replace_working_hours(
     working_hours: list[WorkingHoursBase],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Master)
@@ -206,7 +205,7 @@ async def create_time_off(
     time_off: TimeOffCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
@@ -268,7 +267,7 @@ async def delete_time_off(
     time_off_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
 
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
@@ -295,7 +294,7 @@ async def create_schedule_exception(
     exception: WorkingHoursExceptionCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
@@ -357,7 +356,7 @@ async def delete_schedule_exception(
     exception_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
@@ -385,7 +384,7 @@ async def restore_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     master = await restore_entity(db, models.Master, master_id, membership.organization_id, "Master")
 
@@ -405,7 +404,7 @@ async def delete_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Master).where(
@@ -436,7 +435,7 @@ async def hard_delete_master(
     master_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+    membership: OwnerMembership,
 ):
     result = await db.execute(
         select(models.Master).where(

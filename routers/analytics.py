@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentMembership, require_role
+from auth.auth import ManagerMembership
 from common import get_org_now, get_org_currency
 from db.database import get_db
 from enums import AppointmentStatus
@@ -26,9 +27,7 @@ router = APIRouter()
 @router.get("/revenue", response_model=RevenueResponse)
 async def get_revenue(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     date_from: dt,
     date_to: dt,
 ):
@@ -51,9 +50,7 @@ async def get_revenue(
 @router.get("/top-clients", response_model=list[TopClientResponse])
 async def get_top_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     limit: int = 10,
 ):
     currency = await get_org_currency(db, membership.organization_id)
@@ -86,9 +83,7 @@ async def get_top_clients(
 @router.get("/inactive-clients", response_model=list[InactiveClientResponse])
 async def get_inactive_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     days: int = 30,
 ):
     org_now = await get_org_now(db, membership.organization_id)
@@ -120,9 +115,7 @@ async def get_inactive_clients(
 @router.get("/popular-services", response_model=list[PopularServiceResponse])
 async def get_popular_services(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     limit: int = 10,
 ):
     currency = await get_org_currency(db, membership.organization_id)
@@ -155,9 +148,7 @@ async def get_popular_services(
 @router.get("/masters-workload", response_model=list[MasterWorkloadResponse])
 async def get_masters_workload(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     date_from: dt,
     date_to: dt,
 ):
@@ -206,9 +197,7 @@ def _next_birthday(birth: date_type, today: date_type) -> date_type:
 @router.get("/birthdays", response_model=list[UpcomingBirthdayResponse])
 async def get_birthdays(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership,
-    Depends(require_role(models.MembershipRole.owner,
-                         models.MembershipRole.admin))],
+    membership: ManagerMembership,
     days: int = Query(default=0, ge=0, le=60),
 ):
     today = (await get_org_now(db, membership.organization_id)).date()

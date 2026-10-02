@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
@@ -26,7 +27,7 @@ async def create_service(
     service: ServiceCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     new_service = models.Service(
         organization_id=membership.organization_id,
@@ -90,7 +91,7 @@ async def update_service(
     service_update: ServiceUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     service = await get_owned_active(db, models.Service, service_id, membership.organization_id, "Service")
 
@@ -114,7 +115,7 @@ async def restore_service(
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     service = await restore_entity(db, models.Service, service_id, membership.organization_id, "Service")
 
@@ -134,7 +135,7 @@ async def delete_service(
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     service = await get_owned(db, models.Service, service_id, membership.organization_id, "Service")
     await check_no_active_appointments(db, "service_id", service_id, "service",
@@ -156,7 +157,7 @@ async def hard_delete_service(
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+    membership: OwnerMembership,
 ):
     result = await db.execute(
         select(models.Service).where(

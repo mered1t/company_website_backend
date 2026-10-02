@@ -120,12 +120,26 @@ async def get_current_membership(
 CurrentMembership = Annotated[models.Membership, Depends(get_current_membership)]
 
 
-def require_role(*allowed_roles: "models.MembershipRole"):
+def require_role(*allowed_roles: "models.MembershipRole | str"):
+    # Приводим всё к enum: опечатка в названии роли упадёт при запуске приложения, а не молча
+    allowed = {models.MembershipRole(r) for r in allowed_roles}
+
     async def checker(membership: CurrentMembership) -> models.Membership:
-        if membership.role not in allowed_roles:
+        if membership.role not in allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return membership
     return checker
+
+
+# Именованные права: используем в роутерах вместо длинных require_role(...)
+ManagerMembership = Annotated[
+    models.Membership,
+    Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin)),
+]
+OwnerMembership = Annotated[
+    models.Membership,
+    Depends(require_role(models.MembershipRole.owner)),
+]
 
 
 def create_refresh_token() -> str:

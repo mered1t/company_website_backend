@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentUser, CurrentMembership, require_role
+from auth.auth import ManagerMembership
 from common import generate_unique_slug, generate_invitation_token, log_activity, get_owned
 from db.database import get_db
 from schemas import schemas
@@ -14,7 +15,9 @@ from schemas.schemas import (OrganizationCreate,
                              InvitationCreate,
                              InvitationPublic,
                              OrganizationWithRole,
-                             MemberPublic, ActivityLogPublic, OrganizationUpdate)
+                             MemberPublic,
+                             ActivityLogPublic,
+                             OrganizationUpdate)
 
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
@@ -88,7 +91,7 @@ async def create_organization(
 async def update_organization(
     organization_id: int,
     payload: schemas.OrganizationUpdate,
-    membership: models.Membership = Depends(require_role("owner", "admin")),
+        membership: ManagerMembership,
     db: AsyncSession = Depends(get_db),
 ):
     org = await db.get(models.Organization, organization_id)
@@ -174,7 +177,7 @@ async def create_invitation(
     invitation: InvitationCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
 
     if not current_user.email_verified:
@@ -261,7 +264,7 @@ async def resend_invitation(
     organization_id: int,
     invitation_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Invitation).where(
@@ -303,7 +306,7 @@ async def resend_invitation(
 async def list_invitations(
     organization_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Invitation).where(
@@ -319,7 +322,7 @@ async def revoke_invitation(
     organization_id: int,
     invitation_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Invitation).where(
@@ -345,7 +348,7 @@ async def revoke_invitation(
 async def list_activity(
     organization_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
@@ -364,7 +367,7 @@ async def remove_member(
     organization_id: int,
     user_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Membership).where(

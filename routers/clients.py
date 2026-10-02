@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (AppointmentWithDetails,
                              ClientCreate,
@@ -94,7 +95,7 @@ async def list_clients(
 @router.get("/export")
 async def export_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     result = await db.execute(
         select(models.Client).where(
@@ -128,7 +129,7 @@ async def export_clients(
 async def import_clients(
     file: UploadFile,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be a .csv file")
@@ -239,7 +240,7 @@ async def restore_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     client = await restore_entity(db, models.Client, client_id, membership.organization_id, "Client")
 
@@ -259,7 +260,7 @@ async def delete_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     client = await get_owned(db, models.Client, client_id, membership.organization_id, "Client")
 
@@ -282,7 +283,7 @@ async def hard_delete_client(
     client_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+    membership: OwnerMembership,
 ):
     result = await db.execute(
         select(models.Client).where(
@@ -484,7 +485,7 @@ async def delete_client_comment(
     comment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 import models
 from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
@@ -226,7 +227,7 @@ async def restore_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner, models.MembershipRole.admin))],
+    membership: ManagerMembership,
 ):
     appointment = await restore_entity(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
 
@@ -268,7 +269,7 @@ async def hard_delete_appointment(
     appointment_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: Annotated[models.Membership, Depends(require_role(models.MembershipRole.owner))],
+    membership: OwnerMembership,
 ):
     result = await db.execute(
         select(models.Appointment).where(
