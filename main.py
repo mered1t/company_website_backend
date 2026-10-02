@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException
 
 from contextlib import asynccontextmanager
 
-from db.database import Base, engine, get_db
+from db.database import engine, get_db
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public
 
 from slowapi import _rate_limit_exceeded_handler

@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
@@ -17,7 +17,6 @@ from common import (get_owned,
                     restore_entity,
                     check_no_history)
 
-from datetime import datetime as dt
 from time_utils import utc_now
 
 router = APIRouter()

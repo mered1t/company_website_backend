@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (MasterCreate,
@@ -19,9 +19,7 @@ from schemas.schemas import (MasterCreate,
                              WorkingHoursExceptionCreate,
                              WorkingHoursExceptionPublic)
 
-from datetime import datetime as dt
-from common import (get_owned,
-                    log_activity,
+from common import (log_activity,
                     check_no_active_appointments,
                     restore_entity,
                     check_no_history,
@@ -301,8 +299,6 @@ async def create_schedule_exception(
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
     exception_date = full_dt.combine(exception.date, time(0, 0))
-    start_dt = full_dt.combine(exception.date, full_dt.strptime(exception.start_time, "%H:%M").time())
-    end_dt = full_dt.combine(exception.date, full_dt.strptime(exception.end_time, "%H:%M").time())
 
     day_start = full_dt.combine(exception.date, time(0, 0))
     day_end = full_dt.combine(exception.date, time(23, 59, 59))

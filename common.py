@@ -7,7 +7,7 @@ import secrets
 import re
 import models
 
-from datetime import datetime, UTC, date, timedelta
+from datetime import datetime, UTC, timedelta
 from zoneinfo import ZoneInfo
 from enums import AppointmentStatus
 

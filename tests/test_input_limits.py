@@ -1,5 +1,4 @@
 """Границы входных данных: слишком длинное/пустое/бессмысленное отклоняется с 422."""
-from tests.test_tenant_isolation import make_client
 
 
 async def test_password_length_is_limited(api):

@@ -6,7 +6,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentMembership, require_role
 from auth.auth import ManagerMembership
 from common import get_org_now, get_org_currency
 from db.database import get_db
@@ -38,6 +37,7 @@ async def get_revenue(
         .where(
             models.Appointment.organization_id == membership.organization_id,
             models.Appointment.status == AppointmentStatus.completed,
+            models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time >= date_from,
             models.Appointment.start_time <= date_to,
             models.Appointment.currency == currency,
@@ -66,7 +66,9 @@ async def get_top_clients(
         .join(models.Appointment, models.Appointment.client_id == models.Client.id)
         .where(
             models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
             models.Appointment.status == AppointmentStatus.completed,
+            models.Appointment.deleted_at.is_(None),
             models.Appointment.currency == currency,
         )
         .group_by(models.Client.id, models.Client.full_name)
@@ -99,9 +101,13 @@ async def get_inactive_clients(
         .outerjoin(
             models.Appointment,
             (models.Appointment.client_id == models.Client.id)
+            & (models.Appointment.deleted_at.is_(None))
             & (models.Appointment.status == AppointmentStatus.completed),
         )
-        .where(models.Client.organization_id == membership.organization_id)
+        .where(
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        )
         .group_by(models.Client.id, models.Client.full_name)
         .having((func.max(models.Appointment.start_time) < cutoff) | (func.max(models.Appointment.start_time).is_(None))),
     )
@@ -132,6 +138,7 @@ async def get_popular_services(
         .where(
             models.Service.organization_id == membership.organization_id,
             models.Appointment.status == AppointmentStatus.completed,
+            models.Appointment.deleted_at.is_(None),
             models.Appointment.currency == currency,
         )
         .group_by(models.Service.id, models.Service.name)
@@ -165,6 +172,7 @@ async def get_masters_workload(
         .outerjoin(
             models.Appointment,
             (models.Appointment.master_id == models.Master.id)
+            & (models.Appointment.deleted_at.is_(None))
             & (models.Appointment.status == AppointmentStatus.completed)
             & (models.Appointment.currency == currency)
             & (models.Appointment.start_time >= date_from)

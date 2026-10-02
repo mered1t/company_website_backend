@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import models
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
-from common import generate_unique_slug, generate_invitation_token, log_activity, get_owned
+from common import generate_unique_slug, generate_invitation_token, log_activity
 from db.database import get_db
 from schemas import schemas
 from schemas.schemas import (OrganizationCreate,
@@ -16,10 +16,9 @@ from schemas.schemas import (OrganizationCreate,
                              InvitationPublic,
                              OrganizationWithRole,
                              MemberPublic,
-                             ActivityLogPublic,
-                             OrganizationUpdate)
+                             ActivityLogPublic)
 
-from datetime import datetime as dt, timedelta
+from datetime import timedelta
 from email_service import send_invitation_email
 from rate_limiter import limiter
 import logging

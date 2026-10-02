@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import IntegrityError
 
 import models
 from db.database import get_db
@@ -16,17 +15,17 @@ from schemas.schemas import (ServicePublic,
                              PublicOrganizationInfo,)
 
 
-from datetime import date as date_type, datetime, timedelta
-from common import log_activity, get_available_intervals, check_booking_horizon, get_org_now
+from datetime import date as date_type, timedelta
+from common import log_activity, check_booking_horizon, get_org_now
 from enums import AppointmentStatus
 
 from services.booking import (
-    check_master_provides_service, check_slot_free, create_appointment_record,
+    check_slot_free, create_appointment_record,
     load_service_and_master, get_free_slots,
 )
 
 from services.booking import (
-    check_master_provides_service, check_slot_free, create_appointment_record,
+    check_slot_free, create_appointment_record,
 )
 
 from rate_limiter import limiter

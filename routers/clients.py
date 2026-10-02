@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import ValidationError
 
 import models
-from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (AppointmentWithDetails,
@@ -26,7 +26,6 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientCommentPublic,
                              ClientCommentUpdate)
 
-from datetime import datetime as dt
 from common import (get_owned,
                     log_activity,
                     check_no_active_appointments,

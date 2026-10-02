@@ -6,12 +6,10 @@ from auth.auth import hash_password, CurrentUser, create_refresh_token
 
 from fastapi.security import OAuth2PasswordRequestForm
 from auth.auth import hash_password, verify_password, create_access_token
-from common import generate_unique_slug
 
 from db.database import get_db
 from models import models
 from schemas.schemas import (
-    UserPublic,
     UserCreate,
     UserPrivate,
     UserUpdate,
@@ -25,8 +23,7 @@ from schemas.schemas import (
 from rate_limiter import limiter
 
 import secrets
-from datetime import datetime as dt, timedelta, datetime
-from datetime import UTC
+from datetime import timedelta
 from email_service import send_password_reset_email, send_verification_email
 import logging
 from time_utils import utc_now

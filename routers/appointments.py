@@ -6,10 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
 
 import models
-from auth.auth import CurrentMembership, require_role, CurrentUser
+from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
@@ -23,7 +22,6 @@ from common import (get_owned,
                     get_owned_active,
                     log_activity,
                     restore_entity,
-                    get_available_intervals,
                     get_org_currency)
 from time_utils import utc_now
 
