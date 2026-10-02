@@ -1,3 +1,4 @@
+import unicodedata
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -35,6 +36,17 @@ Name150 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, 
 
 MAX_DURATION_MINUTES = 24 * 60
 MAX_PASSWORD_LENGTH = 128
+
+
+_EMOJI_CATEGORIES = {"So", "Sk", "Mn", "Me", "Cf"}  # символы, модификаторы тона, variation selector, ZWJ
+
+
+def _validate_emoji(value: str | None) -> str | None:
+    if value is None:
+        return value
+    if not value or len(value) > 16 or any(unicodedata.category(c) not in _EMOJI_CATEGORIES for c in value):
+        raise ValueError("emoji must contain only emoji characters (up to 16 code points)")
+    return value
 
 
 def _validate_birth_date(value: date | None) -> date | None:
@@ -192,12 +204,19 @@ class ServiceBase(BaseModel):
     duration_minutes: int = Field(gt=0)
     description: str | None = None
     photo: str | None = None
+    emoji: str | None = None
 
 
 class ServiceCreate(ServiceBase):
     duration_minutes: int = Field(gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
     photo: str | None = Field(default=None, max_length=255)
+    emoji: str | None = Field(default=None, max_length=16)
+
+    @field_validator("emoji")
+    @classmethod
+    def check_emoji(cls, v):
+        return _validate_emoji(v)
 
 
 class ServiceUpdate(PatchModel):
@@ -207,6 +226,12 @@ class ServiceUpdate(PatchModel):
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
     photo: str | None = Field(default=None, max_length=255)
+    emoji: str | None = Field(default=None, max_length=16)
+
+    @field_validator("emoji")
+    @classmethod
+    def check_emoji(cls, v):
+        return _validate_emoji(v)
 
 
 class ServicePublic(ServiceBase):

@@ -79,6 +79,7 @@ class Service(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    emoji: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
