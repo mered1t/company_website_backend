@@ -91,6 +91,7 @@ async def list_appointments(
             models.Appointment.organization_id == membership.organization_id,
             models.Appointment.deleted_at.is_(None),
         )
+        .order_by(models.Appointment.id)
         .offset(skip)
         .limit(limit),
     )

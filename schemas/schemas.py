@@ -125,7 +125,7 @@ class RefreshRequest(BaseModel):
 class ClientBase(BaseModel):
     full_name: Name150
     phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(default=None, max_length=120)
     birth_date: date | None = None
     notes: str | None = None
 
@@ -143,7 +143,7 @@ class ClientUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name", "phone"})
     full_name: Name150 | None = None
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(default=None, max_length=120)
     birth_date: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
 
@@ -197,7 +197,7 @@ class ServiceBase(BaseModel):
 class ServiceCreate(ServiceBase):
     duration_minutes: int = Field(gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
-    photo: str | None = Field(default=None, max_length=2048)
+    photo: str | None = Field(default=None, max_length=255)
 
 
 class ServiceUpdate(PatchModel):
@@ -206,7 +206,7 @@ class ServiceUpdate(PatchModel):
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
-    photo: str | None = Field(default=None, max_length=2048)
+    photo: str | None = Field(default=None, max_length=255)
 
 
 class ServicePublic(ServiceBase):
@@ -243,7 +243,7 @@ class MasterBase(BaseModel):
 
 
 class MasterCreate(MasterBase):
-    photo: str | None = Field(default=None, max_length=2048)
+    photo: str | None = Field(default=None, max_length=255)
     working_hours: list[WorkingHoursBase] = Field(default=[], max_length=50)
     service_ids: list[int] = Field(default=[], max_length=200)
 
@@ -252,7 +252,7 @@ class MasterUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name"})
     full_name: Name150 | None = None
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
-    photo: str | None = Field(default=None, max_length=2048)
+    photo: str | None = Field(default=None, max_length=255)
 
 
 class MasterPublic(MasterBase):
@@ -435,7 +435,7 @@ class MemberPublic(BaseModel):
 
 
 class InvitationCreate(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(max_length=120)
     role: str = Field(pattern="^(admin|master)$")
     master_id: int | None = None
 
@@ -547,7 +547,7 @@ class AvailableSlot(BaseModel):
 class PublicBookingRequest(BaseModel):
     client_full_name: Name150
     client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
-    client_email: EmailStr | None = None
+    client_email: EmailStr | None = Field(default=None, max_length=120)
     master_id: int
     service_id: int
     start_time: datetime

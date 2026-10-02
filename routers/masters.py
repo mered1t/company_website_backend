@@ -94,6 +94,7 @@ async def list_masters(
             models.Master.organization_id == membership.organization_id,
             models.Master.deleted_at.is_(None),
         )
+        .order_by(models.Master.id)
         .offset(skip)
         .limit(limit),
     )

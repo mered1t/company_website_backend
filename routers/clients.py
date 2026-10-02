@@ -87,7 +87,7 @@ async def list_clients(
             models.Client.full_name.ilike(search_term) | models.Client.phone.ilike(search_term),
         )
 
-    query = query.offset(skip).limit(limit)
+    query = query.order_by(models.Client.id).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -334,7 +334,7 @@ async def get_client_appointments(
     if status_filter is not None:
         query = query.where(models.Appointment.status == status_filter)
 
-    query = query.order_by(models.Appointment.start_time.desc())
+    query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc())
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -369,7 +369,7 @@ async def get_client_activity(
             models.ActivityLog.organization_id == membership.organization_id,
             query_filter,
         )
-        .order_by(models.ActivityLog.created_at.desc())
+        .order_by(models.ActivityLog.created_at.desc(), models.ActivityLog.id.desc())
         .offset(skip)
         .limit(limit),
     )
@@ -423,7 +423,7 @@ async def list_client_comments(
         select(models.ClientComment, models.User.username)
         .outerjoin(models.User, models.User.id == models.ClientComment.user_id)
         .where(models.ClientComment.client_id == client_id)
-        .order_by(models.ClientComment.created_at.desc()),
+        .order_by(models.ClientComment.created_at.desc(), models.ClientComment.id.desc()),
     )
     return [
         ClientCommentPublic(id=c.id, content=c.content, author_username=username, created_at=c.created_at)

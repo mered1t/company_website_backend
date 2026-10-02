@@ -360,7 +360,7 @@ async def list_activity(
     result = await db.execute(
         select(models.ActivityLog)
         .where(models.ActivityLog.organization_id == organization_id)
-        .order_by(models.ActivityLog.created_at.desc())
+        .order_by(models.ActivityLog.created_at.desc(), models.ActivityLog.id.desc())
         .offset(skip)
         .limit(limit),
     )

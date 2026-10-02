@@ -60,6 +60,7 @@ async def list_services(
             models.Service.organization_id == membership.organization_id,
             models.Service.deleted_at.is_(None),
         )
+        .order_by(models.Service.id)
         .offset(skip)
         .limit(limit),
     )
