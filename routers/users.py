@@ -20,7 +20,7 @@ from schemas.schemas import (
     ResetPasswordRequest,
     RefreshRequest,
     VerifyEmailRequest,
-    ResendVerificationRequest)
+    ResendVerificationRequest, MAX_PASSWORD_LENGTH)
 
 from rate_limiter import limiter
 
@@ -115,6 +115,13 @@ async def login(
     user = result.scalars().first()
 
     if not user or not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if len(form_data.password) > MAX_PASSWORD_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

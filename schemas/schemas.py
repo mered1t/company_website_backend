@@ -1,10 +1,10 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from typing import Annotated, ClassVar
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
 
 import re
-from typing import ClassVar
 
 from currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
@@ -29,6 +29,18 @@ def _validate_currency(v: str) -> str:
 
 
 SLUG_PATTERN = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
+
+# Имя: пробелы по краям убираются, пустая строка и "   " не проходят
+Name150 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
+
+MAX_DURATION_MINUTES = 24 * 60
+MAX_PASSWORD_LENGTH = 128
+
+
+def _validate_birth_date(value: date | None) -> date | None:
+    if value is not None and not (date(1900, 1, 1) <= value <= date.today()):
+        raise ValueError("birth_date must be between 1900-01-01 and today")
+    return value
 
 def _validate_slug(value: str) -> str:
     if not (3 <= len(value) <= 100):
@@ -63,7 +75,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
     accept_terms: bool
 
     @model_validator(mode="after")
@@ -110,9 +122,8 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-
 class ClientBase(BaseModel):
-    full_name: str = Field(min_length=1, max_length=150)
+    full_name: Name150
     phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = None
     birth_date: date | None = None
@@ -120,16 +131,26 @@ class ClientBase(BaseModel):
 
 
 class ClientCreate(ClientBase):
-    pass
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("birth_date")
+    @classmethod
+    def check_birth_date(cls, v):
+        return _validate_birth_date(v)
 
 
 class ClientUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name", "phone"})
-    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    full_name: Name150 | None = None
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = None
     birth_date: date | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("birth_date")
+    @classmethod
+    def check_birth_date(cls, v):
+        return _validate_birth_date(v)
 
 
 class ClientPublic(ClientBase):
@@ -166,7 +187,7 @@ class ClientImportResult(BaseModel):
 
 
 class ServiceBase(BaseModel):
-    name: str = Field(min_length=1, max_length=150)
+    name: Name150
     price: int = Field(ge=0, le=MAX_PRICE)
     duration_minutes: int = Field(gt=0)
     description: str | None = None
@@ -174,16 +195,18 @@ class ServiceBase(BaseModel):
 
 
 class ServiceCreate(ServiceBase):
-    pass
+    duration_minutes: int = Field(gt=0, le=MAX_DURATION_MINUTES)
+    description: str | None = Field(default=None, max_length=2000)
+    photo: str | None = Field(default=None, max_length=2048)
 
 
 class ServiceUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"name", "price", "duration_minutes"})
-    name: str | None = Field(default=None, min_length=1, max_length=150)
+    name: Name150 | None = None
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
-    duration_minutes: int | None = Field(default=None, gt=0)
-    description: str | None = None
-    photo: str | None = None
+    duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
+    description: str | None = Field(default=None, max_length=2000)
+    photo: str | None = Field(default=None, max_length=2048)
 
 
 class ServicePublic(ServiceBase):
@@ -214,21 +237,22 @@ class WorkingHoursPublic(WorkingHoursFields):
 
 
 class MasterBase(BaseModel):
-    full_name: str = Field(min_length=1, max_length=150)
+    full_name: Name150
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = None
 
 
 class MasterCreate(MasterBase):
-    working_hours: list[WorkingHoursBase] = []
-    service_ids: list[int] = []
+    photo: str | None = Field(default=None, max_length=2048)
+    working_hours: list[WorkingHoursBase] = Field(default=[], max_length=50)
+    service_ids: list[int] = Field(default=[], max_length=200)
 
 
 class MasterUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name"})
-    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    full_name: Name150 | None = None
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
-    photo: str | None = None
+    photo: str | None = Field(default=None, max_length=2048)
 
 
 class MasterPublic(MasterBase):
@@ -295,7 +319,7 @@ class AppointmentBase(BaseModel):
 
 
 class AppointmentCreate(AppointmentBase):
-    pass
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class AppointmentUpdate(PatchModel):
@@ -308,7 +332,7 @@ class AppointmentUpdate(PatchModel):
     master_id: int | None = None
     start_time: datetime | None = None
     status: AppointmentStatus | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class AppointmentPublic(AppointmentBase):
@@ -331,7 +355,7 @@ class AppointmentWithDetails(AppointmentPublic):
 
 
 class OrganizationCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=150)
+    name: str = Name150
     timezone: str | None = None
     currency: str | None = None
 
@@ -350,10 +374,10 @@ class OrganizationUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
         {"name", "timezone", "booking_horizon_days", "slug", "currency"}
     )
-    
-    name: str | None = None
+
+    name: Name150 | None = None
     timezone: str | None = None
-    booking_horizon_days: int | None = None
+    booking_horizon_days: int | None = Field(default=None, ge=1, le=365)
     slug: str | None = None
     currency: str | None = None
 
@@ -442,7 +466,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
 
     @model_validator(mode="after")
     def check_password_strength(self) -> "ResetPasswordRequest":
@@ -521,7 +545,7 @@ class AvailableSlot(BaseModel):
 
 
 class PublicBookingRequest(BaseModel):
-    client_full_name: str = Field(min_length=1, max_length=150)
+    client_full_name: Name150
     client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     client_email: EmailStr | None = None
     master_id: int
