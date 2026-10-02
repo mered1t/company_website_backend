@@ -35,6 +35,7 @@ from common import (get_owned,
                     check_no_history)
 
 from enums import AppointmentStatus
+from time_utils import utc_now
 
 router = APIRouter()
 
@@ -267,7 +268,7 @@ async def delete_client(
     await check_no_active_appointments(db, "client_id", client_id,
                                        "client", membership.organization_id)
 
-    client.deleted_at = dt.now()
+    client.deleted_at = utc_now()
 
     await log_activity(
         db, membership.organization_id, current_user.id,

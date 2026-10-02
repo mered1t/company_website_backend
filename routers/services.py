@@ -18,6 +18,7 @@ from common import (get_owned,
                     check_no_history)
 
 from datetime import datetime as dt
+from time_utils import utc_now
 
 router = APIRouter()
 
@@ -142,7 +143,7 @@ async def delete_service(
     await check_no_active_appointments(db, "service_id", service_id, "service",
                                        membership.organization_id)
 
-    service.deleted_at = dt.now()
+    service.deleted_at = utc_now()
 
     await log_activity(
         db, membership.organization_id, current_user.id,

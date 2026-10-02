@@ -25,6 +25,7 @@ from common import (get_owned,
                     restore_entity,
                     get_available_intervals,
                     get_org_currency)
+from time_utils import utc_now
 
 router = APIRouter()
 
@@ -255,7 +256,7 @@ async def delete_appointment(
     if membership.role == models.MembershipRole.master:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Masters cannot delete appointments")
 
-    appointment.deleted_at = dt.now()
+    appointment.deleted_at = utc_now()
 
     await log_activity(
         db, membership.organization_id, current_user.id,

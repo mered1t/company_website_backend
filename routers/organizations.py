@@ -23,6 +23,7 @@ from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
 from rate_limiter import limiter
 import logging
+from time_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ async def create_invitation(
             models.Invitation.organization_id == organization_id,
             models.Invitation.email == invitation.email.lower(),
             models.Invitation.accepted == False,
-            models.Invitation.expires_at > dt.now(),
+            models.Invitation.expires_at > utc_now(),
         ),
     )
     if existing_invitation.scalars().first():
@@ -231,7 +232,7 @@ async def create_invitation(
         role=models.MembershipRole(invitation.role),
         master_id=invitation.master_id,
         token=generate_invitation_token(),
-        expires_at=dt.now() + timedelta(days=7),
+        expires_at=utc_now() + timedelta(days=7),
     )
     db.add(new_invitation)
     await db.flush()
@@ -283,7 +284,7 @@ async def resend_invitation(
     if invitation.accepted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation already accepted")
 
-    if invitation.expires_at < dt.now():
+    if invitation.expires_at < utc_now():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation expired, create a new one")
 
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))

@@ -23,6 +23,7 @@ def _require_verified_email(user: models.User) -> None:
 
 
 from sqlalchemy.orm import selectinload
+from time_utils import utc_now
 
 
 @router.get("/{token}", response_model=InvitationPreview)
@@ -36,7 +37,7 @@ async def preview_invitation(token: str, db: Annotated[AsyncSession, Depends(get
     if not invitation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
 
-    valid = not invitation.accepted and invitation.expires_at > dt.now()
+    valid = not invitation.accepted and invitation.expires_at > utc_now()
 
     return InvitationPreview(
         organization_name=invitation.organization.name,
@@ -57,7 +58,7 @@ async def list_pending_invitations(
         select(models.Invitation).where(
             models.Invitation.email == current_user.email,
             models.Invitation.accepted == False,
-            models.Invitation.expires_at > dt.now(),
+            models.Invitation.expires_at > utc_now(),
         ),
     )
     return result.scalars().all()
@@ -84,7 +85,7 @@ async def accept_invitation(
     if invitation.accepted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation already accepted")
 
-    if invitation.expires_at < dt.now():
+    if invitation.expires_at < utc_now():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation expired")
 
     existing = await db.execute(

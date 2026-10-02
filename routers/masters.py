@@ -28,6 +28,7 @@ from common import (get_owned,
                     find_conflicting_appointments, get_owned_active)
 
 from datetime import datetime as full_dt, time
+from time_utils import utc_now
 
 router = APIRouter()
 
@@ -420,7 +421,7 @@ async def delete_master(
     await check_no_active_appointments(db, "master_id", master_id, "master",
                                        membership.organization_id)
 
-    master.deleted_at = dt.now()
+    master.deleted_at = utc_now()
 
     await log_activity(
         db, membership.organization_id, current_user.id,

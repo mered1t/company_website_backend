@@ -29,6 +29,7 @@ from datetime import datetime as dt, timedelta, datetime
 from datetime import UTC
 from email_service import send_password_reset_email, send_verification_email
 import logging
+from time_utils import utc_now
 
 
 router = APIRouter()
@@ -63,7 +64,7 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
         username=user.username,
         email=user.email.lower(),
         password_hash=hash_password(user.password),
-        terms_accepted_at=datetime.now(UTC).replace(tzinfo=None),
+        terms_accepted_at=utc_now(),
     )
     db.add(new_user)
     await db.flush()
@@ -72,7 +73,7 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
     verification_token = models.EmailVerificationToken(
         user_id=new_user.id,
         token=token,
-        expires_at=dt.now() + timedelta(hours=24),
+        expires_at=utc_now() + timedelta(hours=24),
     )
     db.add(verification_token)
     await db.commit()
@@ -91,7 +92,7 @@ async def accept_terms(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    current_user.terms_accepted_at = datetime.now(UTC).replace(tzinfo=None)
+    current_user.terms_accepted_at = utc_now()
     await db.commit()
     await db.refresh(current_user)
     return current_user
@@ -134,7 +135,7 @@ async def login(
     refresh_token = models.RefreshToken(
         user_id=user.id,
         token=refresh_token_value,
-        expires_at=dt.now() + timedelta(days=30),
+        expires_at=utc_now() + timedelta(days=30),
     )
     db.add(refresh_token)
     await db.commit()
@@ -159,7 +160,7 @@ async def forgot_password(
         reset_token = models.PasswordResetToken(
             user_id=user.id,
             token=token,
-            expires_at=dt.now() + timedelta(minutes=30),
+            expires_at=utc_now() + timedelta(minutes=30),
         )
         db.add(reset_token)
         await db.commit()
@@ -184,7 +185,7 @@ async def reset_password(
     )
     reset_token = result.scalars().first()
 
-    if not reset_token or reset_token.used or reset_token.expires_at < dt.now():
+    if not reset_token or reset_token.used or reset_token.expires_at < utc_now():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user_result = await db.execute(select(models.User).where(models.User.id == reset_token.user_id))
@@ -243,7 +244,7 @@ async def update_user(
         db.add(models.EmailVerificationToken(
             user_id=user.id,
             token=new_verification_token,
-            expires_at=dt.now() + timedelta(hours=24),
+            expires_at=utc_now() + timedelta(hours=24),
         ))
 
     await db.commit()
@@ -305,7 +306,7 @@ async def refresh_access_token(
     )
     refresh_token = result.scalars().first()
 
-    if not refresh_token or refresh_token.revoked or refresh_token.expires_at < dt.now():
+    if not refresh_token or refresh_token.revoked or refresh_token.expires_at < utc_now():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
     access_token = create_access_token(data={"sub": str(refresh_token.user_id)})
@@ -338,7 +339,7 @@ async def verify_email(
     )
     verification_token = result.scalars().first()
 
-    if not verification_token or verification_token.used or verification_token.expires_at < dt.now():
+    if not verification_token or verification_token.used or verification_token.expires_at < utc_now():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user_result = await db.execute(select(models.User).where(models.User.id == verification_token.user_id))
@@ -367,7 +368,7 @@ async def resend_verification(
         verification_token = models.EmailVerificationToken(
             user_id=user.id,
             token=token,
-            expires_at=dt.now() + timedelta(hours=24),
+            expires_at=utc_now() + timedelta(hours=24),
         )
         db.add(verification_token)
         await db.commit()
