@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     resend_api_key: str
     sentry_dsn: str | None = None
+    environment: str = "production"
     email_from: str = "onboarding@resend.dev"
     frontend_url: str = "https://koracrm.com"
     app_name: str = "Твоё название CRM"

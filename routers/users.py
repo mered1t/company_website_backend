@@ -368,6 +368,6 @@ async def resend_verification(
         try:
             send_verification_email(to_email=user.email, token=token)
         except Exception:
-            pass
+            logger.exception("Failed to resend verification email")
 
     # Всегда одинаковый ответ, независимо от результата

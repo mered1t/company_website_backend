@@ -16,6 +16,7 @@ from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import sentry_sdk
+import logging
 from config import settings
 
 from currencies import CURRENCIES
@@ -28,11 +29,18 @@ async def lifespan(_app: FastAPI):
     await engine.dispose()
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 if settings.sentry_dsn:
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
-        traces_sample_rate=1.0,
-        environment="production",
+        traces_sample_rate=0.1,      # 10% запросов для замеров скорости, не 100%
+        environment=settings.environment,
+        send_default_pii=False,      # не отправлять личные данные пользователей
     )
 
 
@@ -70,6 +78,7 @@ async def health_check(db: Annotated[AsyncSession, Depends(get_db)]):
         await db.execute(text("SELECT 1"))
         return {"status": "ok", "database": "connected"}
     except Exception:
+        logger.exception("Health check: database unavailable")
         raise HTTPException(status_code=503, detail={"status": "error", "database": "unavailable"})
 
 

@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentUser, CurrentMembership, require_role
+from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
 from common import generate_unique_slug, generate_invitation_token, log_activity, get_owned
 from db.database import get_db
@@ -22,6 +22,9 @@ from schemas.schemas import (OrganizationCreate,
 from datetime import datetime as dt, timedelta
 from email_service import send_invitation_email
 from rate_limiter import limiter
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -252,7 +255,8 @@ async def create_invitation(
             token=new_invitation.token,
         )
     except Exception:
-        pass
+        logger.exception("Failed to send invitation email (invitation_id=%s)",
+                         new_invitation.id)
 
     return new_invitation
 
@@ -292,7 +296,8 @@ async def resend_invitation(
             token=invitation.token,
         )
     except Exception:
-        pass
+        logger.exception("Failed to resend invitation email (invitation_id=%s)",
+                         invitation.id)
 
     await log_activity(
         db, organization_id, membership.user_id,
