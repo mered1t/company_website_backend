@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 import re
+from typing import ClassVar
 
 from currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
@@ -38,6 +39,22 @@ def _validate_slug(value: str) -> str:
             "(no leading/trailing/double hyphens)"
         )
     return value
+
+
+class PatchModel(BaseModel):
+    """База для PATCH-схем: перечисленные в non_nullable поля нельзя явно обнулять (null).
+
+    Если поле просто не передано, оно не меняется. Если передано как null, будет 422
+    вместо ошибки базы данных.
+    """
+    non_nullable: ClassVar[frozenset[str]] = frozenset()
+
+    @model_validator(mode="after")
+    def _forbid_explicit_null(self):
+        for name in self.model_fields_set & self.non_nullable:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class UserBase(BaseModel):
@@ -77,7 +94,8 @@ class UserPrivate(UserPublic):
     terms_accepted_at: datetime | None = None
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"username", "email"})
     username: str | None = Field(default=None, min_length=1, max_length=50)
     email: EmailStr | None = Field(default=None, max_length=120)
 
@@ -105,7 +123,8 @@ class ClientCreate(ClientBase):
     pass
 
 
-class ClientUpdate(BaseModel):
+class ClientUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name", "phone"})
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = None
@@ -158,7 +177,8 @@ class ServiceCreate(ServiceBase):
     pass
 
 
-class ServiceUpdate(BaseModel):
+class ServiceUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"name", "price", "duration_minutes"})
     name: str | None = Field(default=None, min_length=1, max_length=150)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0)
@@ -171,7 +191,6 @@ class ServicePublic(ServiceBase):
 
     id: int
     created_at: datetime
-
 
 
 class WorkingHoursFields(BaseModel):
@@ -194,7 +213,6 @@ class WorkingHoursPublic(WorkingHoursFields):
     id: int
 
 
-
 class MasterBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=150)
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
@@ -206,7 +224,8 @@ class MasterCreate(MasterBase):
     service_ids: list[int] = []
 
 
-class MasterUpdate(BaseModel):
+class MasterUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name"})
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = None
@@ -279,7 +298,11 @@ class AppointmentCreate(AppointmentBase):
     pass
 
 
-class AppointmentUpdate(BaseModel):
+class AppointmentUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset(
+        {"client_id", "service_id", "master_id", "start_time", "status"}
+    )
+
     client_id: int | None = None
     service_id: int | None = None
     master_id: int | None = None
@@ -323,7 +346,11 @@ class OrganizationCreate(BaseModel):
         return _validate_timezone(v)
 
 
-class OrganizationUpdate(BaseModel):
+class OrganizationUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset(
+        {"name", "timezone", "booking_horizon_days", "slug", "currency"}
+    )
+    
     name: str | None = None
     timezone: str | None = None
     booking_horizon_days: int | None = None
