@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
-from sqlalchemy import select
+from sqlalchemy import select, update, delete, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
@@ -334,6 +334,18 @@ async def restore_client(
     current_user: CurrentUser,
     membership: ManagerMembership,
 ):
+    existing = (await db.execute(
+        select(models.Client.anonymized_at).where(
+            models.Client.id == client_id,
+            models.Client.organization_id == membership.organization_id,
+        ),
+    )).first()
+    if existing is not None and existing[0] is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An anonymized client cannot be restored",
+        )
+
     client = await restore_entity(db, models.Client, client_id, membership.organization_id, "Client")
 
     await log_activity(
@@ -398,6 +410,90 @@ async def hard_delete_client(
     )
 
     await db.delete(client)
+    await db.commit()
+
+
+@router.post("/{client_id}/anonymize", status_code=status.HTTP_204_NO_CONTENT)
+async def anonymize_client(
+    client_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: OwnerMembership,
+):
+    """GDPR: безвозвратно стереть персональные данные клиента, сохранив историю записей
+    (для финансовой статистики). Только владелец. Повторный вызов безопасен."""
+    org_id = membership.organization_id
+
+    result = await db.execute(
+        select(models.Client).where(
+            models.Client.id == client_id,
+            models.Client.organization_id == org_id,
+        ),
+    )
+    client = result.scalars().first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if client.anonymized_at is not None:
+        return
+
+    await check_no_active_appointments(db, "client_id", client_id, "client", org_id)
+
+    now = utc_now()
+    client.full_name = "Deleted client"
+    client.phone = f"anon-{client.id}"
+    client.email = None
+    client.birth_date = None
+    client.notes = None
+    if client.deleted_at is None:
+        client.deleted_at = now
+    client.anonymized_at = now
+
+    await db.execute(
+        delete(models.ClientComment)
+        .where(models.ClientComment.client_id == client_id)
+        .execution_options(synchronize_session=False),
+    )
+
+    await db.execute(
+        update(models.Appointment)
+        .where(
+            models.Appointment.client_id == client_id,
+            models.Appointment.organization_id == org_id,
+        )
+        .values(notes=None)
+        .execution_options(synchronize_session=False),
+    )
+
+    appointment_ids = select(models.Appointment.id).where(
+        models.Appointment.client_id == client_id,
+        models.Appointment.organization_id == org_id,
+    )
+    await db.execute(
+        update(models.ActivityLog)
+        .where(
+            models.ActivityLog.organization_id == org_id,
+            or_(
+                and_(
+                    models.ActivityLog.entity_type == "client",
+                    models.ActivityLog.entity_id == client_id,
+                ),
+                and_(
+                    models.ActivityLog.entity_type == "appointment",
+                    models.ActivityLog.entity_id.in_(appointment_ids),
+                    models.ActivityLog.details.like("Public booking by%"),
+                ),
+            ),
+        )
+        .values(details="Personal data removed")
+        .execution_options(synchronize_session=False),
+    )
+
+    await log_activity(
+        db, org_id, current_user.id,
+        action="anonymized", entity_type="client", entity_id=client_id,
+        details="Client personal data anonymized",
+    )
+
     await db.commit()
 
 

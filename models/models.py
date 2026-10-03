@@ -54,6 +54,7 @@ class Client(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     organization: Mapped["Organization"] = relationship(back_populates="clients")
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="client")
