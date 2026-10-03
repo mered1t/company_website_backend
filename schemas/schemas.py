@@ -289,6 +289,18 @@ class MasterPublic(MasterBase):
     services: list[ServicePublic] = []
 
 
+class MasterPublicInfo(BaseModel):
+    """Мастер в публичном API записи: без телефона и служебных полей."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    full_name: str
+    photo: str | None = None
+    working_hours: list[WorkingHoursPublic] = []
+    services: list[ServicePublic] = []
+
+
 class TimeOffCreate(BaseModel):
     start_date: date
     end_date: date

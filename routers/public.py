@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 import models
 from db.database import get_db
 from schemas.schemas import (ServicePublic,
-                             MasterPublic,
+                             MasterPublicInfo,
                              AvailableSlot,
                              PublicBookingRequest,
                              AppointmentPublic,
@@ -55,7 +55,7 @@ async def public_list_services(request: Request, slug: str, db: Annotated[AsyncS
     return result.scalars().all()
 
 
-@router.get("/{slug}/masters", response_model=list[MasterPublic])
+@router.get("/{slug}/masters", response_model=list[MasterPublicInfo])
 @limiter.limit("30/minute")
 async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
     org = await get_organization_by_slug(slug, db)
