@@ -82,3 +82,27 @@ async def test_refresh_token_is_stored_hashed(api, db):
     stored = (await db.execute(select(models.RefreshToken.token))).scalars().all()
     assert refresh not in stored
     assert hash_token(refresh) in stored
+
+async def test_refresh_and_logout_flow_with_hashed_tokens(api):
+    email = await _register(api, "refreshflow")
+    r = await api.post("/api/users/token", data={"username": email, "password": PASSWORD})
+    assert r.status_code == 200
+    refresh = r.json()["refresh_token"]
+
+    r = await api.post("/api/users/refresh", json={"refresh_token": refresh})
+    assert r.status_code == 200, r.text
+    assert r.json()["access_token"]
+    # если refresh ротирует токен, берём новый, иначе остаётся прежний
+    current = r.json().get("refresh_token") or refresh
+
+    r = await api.post("/api/users/logout", json={"refresh_token": current})
+    assert r.status_code == 204, r.text
+
+    # после logout токен больше не работает
+    r = await api.post("/api/users/refresh", json={"refresh_token": current})
+    assert r.status_code in (400, 401)
+
+
+async def test_refresh_rejects_unknown_token(api):
+    r = await api.post("/api/users/refresh", json={"refresh_token": "definitely-not-a-real-token"})
+    assert r.status_code in (400, 401, 422)

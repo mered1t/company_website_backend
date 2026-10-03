@@ -75,15 +75,30 @@ async def test_changed_email_cannot_be_used_to_accept_invitation(api, db, org_a)
     assert r.status_code == 403, r.text
 
 
-async def test_old_verification_token_does_not_verify_new_email(api, db):
+async def test_old_verification_token_does_not_verify_new_email(api, sent_emails):
+    import re
+
+    def token_from(payload):
+        return re.search(r"token=([A-Za-z0-9_\-]+)", payload["html"]).group(1)
+
     headers, user_id = await register_and_login(api, "mallory", "mallory@example.com")
-    old_token = (await db.execute(
-        select(models.EmailVerificationToken.token).where(models.EmailVerificationToken.user_id == user_id),
-    )).scalar_one()
+    old_token = token_from(sent_emails[-1])
 
+    sent_emails.clear()
     await api.patch(f"/api/users/{user_id}", headers=headers, json={"email": "ivan@example.com"})
+    new_token = token_from(sent_emails[-1])
+    assert new_token != old_token
 
+    # старый токен после смены email не подтверждает ничего
     r = await api.post("/api/users/verify-email", json={"token": old_token})
     assert r.status_code == 400, r.text
     me = await api.get("/api/users/me", headers=headers)
     assert me.json()["email_verified"] is False
+
+    # токен из нового письма работает
+    r = await api.post("/api/users/verify-email", json={"token": new_token})
+    assert r.status_code in (200, 204), r.text
+    me = await api.get("/api/users/me", headers=headers)
+    assert me.json()["email_verified"] is True
+
+
