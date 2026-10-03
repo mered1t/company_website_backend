@@ -19,7 +19,8 @@ from schemas.schemas import (OrganizationCreate,
                              ActivityLogPublic)
 
 from datetime import timedelta
-from email_service import send_invitation_email
+from fastapi import BackgroundTasks
+from email_service import safe_send, send_invitation_email
 from rate_limiter import limiter
 import logging
 from time_utils import utc_now
@@ -175,6 +176,7 @@ async def list_my_organizations(
 
 @limiter.limit("10/hour")
 async def create_invitation(
+    background_tasks: BackgroundTasks,
     request: Request,
     organization_id: int,
     invitation: InvitationCreate,
@@ -248,15 +250,12 @@ async def create_invitation(
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
     org = org_result.scalars().first()
 
-    try:
-        send_invitation_email(
-            to_email=new_invitation.email,
-            organization_name=org.name,
-            token=new_invitation.token,
-        )
-    except Exception:
-        logger.exception("Failed to send invitation email (invitation_id=%s)",
-                         new_invitation.id)
+    background_tasks.add_task(
+        safe_send,
+        send_invitation_email,
+        log=("Failed to send invitation email (invitation_id=%s)", new_invitation.id,),
+        to_email=new_invitation.email, organization_name=org.name, token=new_invitation.token,
+    )
 
     return new_invitation
 
@@ -264,6 +263,7 @@ async def create_invitation(
 @router.post("/{organization_id}/invitations/{invitation_id}/resend", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/hour")
 async def resend_invitation(
+    background_tasks: BackgroundTasks,
     request: Request,
     organization_id: int,
     invitation_id: int,
@@ -289,15 +289,12 @@ async def resend_invitation(
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
     org = org_result.scalars().first()
 
-    try:
-        send_invitation_email(
-            to_email=invitation.email,
-            organization_name=org.name,
-            token=invitation.token,
-        )
-    except Exception:
-        logger.exception("Failed to resend invitation email (invitation_id=%s)",
-                         invitation.id)
+    background_tasks.add_task(
+        safe_send,
+        send_invitation_email,
+        log=("Failed to resend invitation email (invitation_id=%s)", invitation.id,),
+        to_email=invitation.email, organization_name=org.name, token=invitation.token,
+    )
 
     await log_activity(
         db, organization_id, membership.user_id,

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -27,6 +28,21 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
+
+
+async def hash_password_async(password: str) -> str:
+    """Хеш пароля в отдельном потоке — не блокирует event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Проверка пароля в отдельном потоке — не блокирует event loop."""
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+# Фиктивный хеш: логин проверяет пароль против него, когда пользователя нет,
+# чтобы время ответа не выдавало, зарегистрирован ли email.
+DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-only")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

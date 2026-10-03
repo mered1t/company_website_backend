@@ -2,10 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
-from auth.auth import hash_password, CurrentUser, create_refresh_token
+from auth.auth import CurrentUser, create_refresh_token
 
 from fastapi.security import OAuth2PasswordRequestForm
-from auth.auth import hash_password, verify_password, create_access_token
+from auth.auth import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    hash_password_async,
+    verify_password_async,
+)
 
 from db.database import get_db
 from models import models
@@ -24,7 +29,8 @@ from rate_limiter import limiter
 
 import secrets
 from datetime import timedelta
-from email_service import send_password_reset_email, send_verification_email
+from fastapi import BackgroundTasks
+from email_service import safe_send, send_password_reset_email, send_verification_email
 import logging
 from time_utils import utc_now
 
@@ -36,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("", response_model=UserPrivate, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
+async def create_user(background_tasks: BackgroundTasks, request: Request, user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         select(models.User).where(func.lower(models.User.username) == user.username.lower()),
     )
@@ -60,7 +66,7 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
     new_user = models.User(
         username=user.username,
         email=user.email.lower(),
-        password_hash=hash_password(user.password),
+        password_hash=await hash_password_async(user.password),
         terms_accepted_at=utc_now(),
     )
     db.add(new_user)
@@ -76,10 +82,12 @@ async def create_user(request: Request, user: UserCreate, db: Annotated[AsyncSes
     await db.commit()
     await db.refresh(new_user)
 
-    try:
-        send_verification_email(to_email=new_user.email, token=token)
-    except Exception:
-        logger.exception("Failed to send verification email")
+    background_tasks.add_task(
+        safe_send,
+        send_verification_email,
+        log=("Failed to send verification email",),
+        to_email=new_user.email, token=token,
+    )
 
     return new_user
 
@@ -112,7 +120,14 @@ async def login(
     )
     user = result.scalars().first()
 
-    if not user or not verify_password(form_data.password, user.password_hash):
+    # Хеш считаем всегда, даже если пользователя нет: иначе по времени ответа
+    # можно узнать, зарегистрирован ли email.
+    password_ok = await verify_password_async(
+        form_data.password,
+        user.password_hash if user else DUMMY_PASSWORD_HASH,
+    )
+
+    if not user or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -143,6 +158,7 @@ async def login(
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/minute")
 async def forgot_password(
+    background_tasks: BackgroundTasks,
     request: Request,
     payload: ForgotPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -162,10 +178,12 @@ async def forgot_password(
         db.add(reset_token)
         await db.commit()
 
-        try:
-            send_password_reset_email(to_email=user.email, token=token)
-        except Exception:
-            logger.exception("Failed to send password reset email")
+        background_tasks.add_task(
+            safe_send,
+            send_password_reset_email,
+            log=("Failed to send password reset email",),
+            to_email=user.email, token=token,
+        )
 
     # Всегда одинаковый ответ, независимо от того, найден email или нет
 
@@ -188,7 +206,7 @@ async def reset_password(
     user_result = await db.execute(select(models.User).where(models.User.id == reset_token.user_id))
     user = user_result.scalars().first()
 
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await hash_password_async(payload.new_password)
     reset_token.used = True
 
     await db.commit()
@@ -196,6 +214,7 @@ async def reset_password(
 
 @router.patch("/{user_id}", response_model=UserPrivate)
 async def update_user(
+    background_tasks: BackgroundTasks,
     user_id: int,
     user_update: UserUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -248,10 +267,12 @@ async def update_user(
     await db.refresh(user)
 
     if new_verification_token:
-        try:
-            send_verification_email(to_email=user.email, token=new_verification_token)
-        except Exception:
-            logger.exception("Failed to send verification email after email change")
+        background_tasks.add_task(
+            safe_send,
+            send_verification_email,
+            log=("Failed to send verification email after email change",),
+            to_email=user.email, token=new_verification_token,
+        )
 
     return user
 
@@ -351,6 +372,7 @@ async def verify_email(
 @router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/hour")
 async def resend_verification(
+    background_tasks: BackgroundTasks,
     request: Request,
     payload: ResendVerificationRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -370,9 +392,11 @@ async def resend_verification(
         db.add(verification_token)
         await db.commit()
 
-        try:
-            send_verification_email(to_email=user.email, token=token)
-        except Exception:
-            logger.exception("Failed to resend verification email")
+        background_tasks.add_task(
+            safe_send,
+            send_verification_email,
+            log=("Failed to resend verification email",),
+            to_email=user.email, token=token,
+        )
 
     # Всегда одинаковый ответ, независимо от результата

@@ -53,3 +53,14 @@ def send_password_reset_email(to_email: str, token: str) -> None:
 def send_verification_email(to_email: str, token: str) -> None:
     verify_url = _frontend_url(f"/verify-email?token={token}")
     _send(to_email, "Confirm your email", render_email("verify_email.html", verify_url=verify_url))
+
+
+def safe_send(func, *, log: tuple, **kwargs) -> None:
+    """Отправка письма в фоне: ошибка пишется в лог (и в Sentry), но не ломает запрос.
+
+    log — аргументы для logger.exception: ("сообщение %s", значение, ...).
+    """
+    try:
+        func(**kwargs)
+    except Exception:
+        logger.exception(*log)
