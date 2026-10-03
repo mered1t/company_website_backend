@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import CurrentUser
+from auth.auth import CurrentUser, hash_token
 from common import log_activity
 from db.database import get_db
 from schemas.schemas import InvitationPreview, InvitationPublic
@@ -30,7 +30,7 @@ async def preview_invitation(token: str, db: Annotated[AsyncSession, Depends(get
     result = await db.execute(
         select(models.Invitation)
         .options(selectinload(models.Invitation.organization))
-        .where(models.Invitation.token == token),
+        .where(models.Invitation.token == hash_token(token)),
     )
     invitation = result.scalars().first()
     if not invitation:

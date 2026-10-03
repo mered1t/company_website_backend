@@ -19,6 +19,7 @@ from schemas.schemas import (OrganizationCreate,
                              ActivityLogPublic)
 
 from datetime import timedelta
+from auth.auth import hash_token
 from fastapi import BackgroundTasks
 from email_service import safe_send, send_invitation_email
 from rate_limiter import limiter
@@ -227,12 +228,13 @@ async def create_invitation(
     if existing_invitation.scalars().first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An active invitation for this email already exists")
 
+    raw_token = generate_invitation_token()
     new_invitation = models.Invitation(
         organization_id=organization_id,
         email=invitation.email.lower(),
         role=models.MembershipRole(invitation.role),
         master_id=invitation.master_id,
-        token=generate_invitation_token(),
+        token=hash_token(raw_token),
         expires_at=utc_now() + timedelta(days=7),
     )
     db.add(new_invitation)
@@ -254,7 +256,7 @@ async def create_invitation(
         safe_send,
         send_invitation_email,
         log=("Failed to send invitation email (invitation_id=%s)", new_invitation.id,),
-        to_email=new_invitation.email, organization_name=org.name, token=new_invitation.token,
+        to_email=new_invitation.email, organization_name=org.name, token=raw_token,
     )
 
     return new_invitation
@@ -289,11 +291,14 @@ async def resend_invitation(
     org_result = await db.execute(select(models.Organization).where(models.Organization.id == organization_id))
     org = org_result.scalars().first()
 
+    # в БД токен хранится хешем, поэтому для повторной отправки выпускаем новый
+    raw_token = generate_invitation_token()
+    invitation.token = hash_token(raw_token)
     background_tasks.add_task(
         safe_send,
         send_invitation_email,
         log=("Failed to resend invitation email (invitation_id=%s)", invitation.id,),
-        to_email=invitation.email, organization_name=org.name, token=invitation.token,
+        to_email=invitation.email, organization_name=org.name, token=raw_token,
     )
 
     await log_activity(

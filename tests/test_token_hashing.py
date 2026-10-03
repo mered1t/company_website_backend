@@ -1,7 +1,7 @@
 import re
 
 import models
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from auth.auth import hash_token
 
@@ -106,3 +106,47 @@ async def test_refresh_and_logout_flow_with_hashed_tokens(api):
 async def test_refresh_rejects_unknown_token(api):
     r = await api.post("/api/users/refresh", json={"refresh_token": "definitely-not-a-real-token"})
     assert r.status_code in (400, 401, 422)
+
+
+async def _verify_email(db, email):
+    await db.execute(update(models.User).where(models.User.email == email).values(email_verified=True))
+    await db.commit()
+
+
+async def _invite(api, db, org, email="newbie@example.com", owner_email="ownera@example.com"):
+    # приглашать в команду можно только с подтверждённым email
+    await _verify_email(db, owner_email)
+    r = await api.post(f"{org.base}/invitations", json={"email": email, "role": "admin"}, headers=org.headers)
+    assert r.status_code in (200, 201), r.text
+    return r.json()["id"]
+
+
+async def test_invitation_token_is_stored_hashed_and_preview_works(api, db, org_a, sent_emails):
+    await _invite(api, db, org_a)
+    token = token_from(sent_emails[-1])
+
+    stored = (await db.execute(select(models.Invitation.token))).scalars().all()
+    assert token not in stored
+    assert hash_token(token) in stored
+
+    r = await api.get(f"/api/invitations/{token}")
+    assert r.status_code == 200, r.text
+    assert r.json()["email"] == "newbie@example.com"
+
+    # хеш из базы как токен не работает
+    r = await api.get(f"/api/invitations/{hash_token(token)}")
+    assert r.status_code == 404
+
+
+async def test_invitation_resend_issues_new_working_token(api, db, org_a, sent_emails):
+    inv_id = await _invite(api, db, org_a)
+    first = token_from(sent_emails[-1])
+
+    sent_emails.clear()
+    r = await api.post(f"{org_a.base}/invitations/{inv_id}/resend", headers=org_a.headers)
+    assert r.status_code == 204, r.text
+    second = token_from(sent_emails[-1])
+
+    assert second != first
+    assert (await api.get(f"/api/invitations/{second}")).status_code == 200
+    assert (await api.get(f"/api/invitations/{first}")).status_code == 404
