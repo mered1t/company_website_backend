@@ -1,5 +1,7 @@
 import csv
 import io
+import re
+from itertools import islice
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
@@ -92,6 +94,79 @@ async def list_clients(
     return result.scalars().all()
 
 
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 МБ
+MAX_IMPORT_ROWS = 10_000
+
+_FORMULA_PREFIXES = ("=", "@", "\t", "\r")
+_PHONE_LIKE = re.compile(r"^[+\-][\d\s().\-]+$")
+
+
+def _csv_safe(value: str) -> str:
+    """Защита от CSV-injection: Excel выполняет ячейки, начинающиеся с = + - @, как формулы."""
+    if not value:
+        return value
+    if value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    if value[0] in "+-" and not _PHONE_LIKE.match(value):
+        return "'" + value
+    return value
+
+
+def _csv_unsafe(value: str) -> str:
+    """Обратная операция для файлов, выгруженных нами же (снимаем добавленный апостроф)."""
+    if len(value) > 1 and value[0] == "'" and value[1] in "=+-@\t\r":
+        return value[1:]
+    return value
+
+
+def _cell(row: dict, key: str) -> str:
+    return _csv_unsafe((row.get(key) or "").strip())
+
+
+def _decode_csv(raw: bytes) -> str:
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    try:
+        return raw.decode("cp1251")  # русский Excel часто сохраняет в Windows-1251
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot read file encoding, save the CSV as UTF-8 or Windows-1251",
+        ) from None
+
+
+def _read_csv(raw: bytes) -> tuple[list[str], list[dict]]:
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is too large (max {MAX_IMPORT_BYTES // (1024 * 1024)} MB)",
+        )
+
+    text = _decode_csv(raw)
+    first_line = text.split("\n", 1)[0]
+    delimiter = max(",;\t", key=first_line.count)
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+
+    try:
+        header = [(name or "").strip().lower() for name in (reader.fieldnames or [])]
+        reader.fieldnames = header
+        rows = list(islice(reader, MAX_IMPORT_ROWS + 1))
+    except csv.Error as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid CSV: {e}",
+        ) from None
+
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many rows (max {MAX_IMPORT_ROWS})",
+        )
+    return header, rows
+
+
 @router.get("/export")
 async def export_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -101,23 +176,26 @@ async def export_clients(
         select(models.Client).where(
             models.Client.organization_id == membership.organization_id,
             models.Client.deleted_at.is_(None),
-        ),
+        ).order_by(models.Client.id),
     )
     clients = result.scalars().all()
 
     output = io.StringIO()
+    output.write("\ufeff")  # BOM: без него Excel показывает кириллицу кракозябрами
     writer = csv.writer(output)
     writer.writerow(["full_name", "phone", "email", "birth_date", "notes"])
     for c in clients:
         writer.writerow([
-            c.full_name,
-            c.phone,
-            c.email or "",
-            c.birth_date.date().isoformat() if c.birth_date else "",
-            c.notes or "",
+            _csv_safe(value)
+            for value in (
+                c.full_name,
+                c.phone,
+                c.email or "",
+                c.birth_date.date().isoformat() if c.birth_date else "",
+                c.notes or "",
+            )
         ])
 
-    output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
@@ -131,52 +209,66 @@ async def import_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: ManagerMembership,
 ):
-    if not file.filename.endswith(".csv"):
+    if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be a .csv file")
 
-    raw = await file.read()
-    text = raw.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
+    # читаем на один байт больше лимита, чтобы заметить превышение, не загружая гигабайты
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
+    header, rows = _read_csv(raw)
 
     required_columns = {"full_name", "phone"}
-    if not required_columns.issubset(set(reader.fieldnames or [])):
+    if not required_columns.issubset(set(header)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"CSV must contain columns: {', '.join(required_columns)}",
+            detail=f"CSV must contain columns: {', '.join(sorted(required_columns))}",
         )
 
-    created = 0
+    # один запрос вместо запроса на каждую строку
+    existing_result = await db.execute(
+        select(models.Client.phone).where(
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        ),
+    )
+    known_phones = set(existing_result.scalars().all())
+
     skipped_duplicates = 0
     errors: list[ClientImportError] = []
+    new_clients: list[models.Client] = []
 
-    for i, row in enumerate(reader, start=2):
+    for i, row in enumerate(rows, start=2):
         try:
             client_data = ClientCreate(
-                full_name=(row.get("full_name") or "").strip(),
-                phone=(row.get("phone") or "").strip(),
-                email=(row.get("email") or "").strip() or None,
-                birth_date=(row.get("birth_date") or "").strip() or None,
-                notes=(row.get("notes") or "").strip() or None,
+                full_name=_cell(row, "full_name"),
+                phone=_cell(row, "phone"),
+                email=_cell(row, "email") or None,
+                birth_date=_cell(row, "birth_date") or None,
+                notes=_cell(row, "notes") or None,
             )
         except ValidationError as e:
             errors.append(ClientImportError(row=i, error=e.errors()[0]["msg"]))
             continue
 
-        existing = await db.execute(
-            select(models.Client).where(
-                models.Client.organization_id == membership.organization_id,
-                models.Client.phone == client_data.phone,
-                models.Client.deleted_at.is_(None),
-            ),
-        )
-        if existing.scalars().first():
+        if client_data.phone in known_phones:
             skipped_duplicates += 1
             continue
 
-        db.add(models.Client(organization_id=membership.organization_id, **client_data.model_dump()))
-        created += 1
+        known_phones.add(client_data.phone)
+        new_clients.append(
+            models.Client(organization_id=membership.organization_id, **client_data.model_dump()),
+        )
 
-    await db.commit()
+    db.add_all(new_clients)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Clients were changed during import, please retry",
+        ) from None
+
+    created = len(new_clients)
     await log_activity(
         db, membership.organization_id, membership.user_id,
         action="created", entity_type="client_import", entity_id=0,
