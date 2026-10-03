@@ -150,3 +150,18 @@ async def test_invitation_resend_issues_new_working_token(api, db, org_a, sent_e
     assert second != first
     assert (await api.get(f"/api/invitations/{second}")).status_code == 200
     assert (await api.get(f"/api/invitations/{first}")).status_code == 404
+
+
+async def test_invitation_responses_do_not_expose_token(api, db, org_a, sent_emails):
+    await _verify_email(db, "ownera@example.com")
+    r = await api.post(
+        f"{org_a.base}/invitations",
+        json={"email": "newbie@example.com", "role": "admin"},
+        headers=org_a.headers,
+    )
+    assert r.status_code in (200, 201), r.text
+    assert "token" not in r.json()
+
+    r = await api.get(f"{org_a.base}/invitations", headers=org_a.headers)
+    assert r.status_code == 200, r.text
+    assert all("token" not in item for item in r.json())

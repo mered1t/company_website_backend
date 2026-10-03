@@ -473,7 +473,6 @@ class InvitationPublic(BaseModel):
     role: str
     organization_id: int
     master_id: int | None
-    token: str
     expires_at: datetime
     accepted: bool
 
