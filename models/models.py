@@ -315,3 +315,13 @@ class EmailVerificationToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+# Составные индексы и индексы на FK под частые запросы (миграция b7e41d2c9a10)
+Index("ix_appointments_org_start", Appointment.organization_id, Appointment.start_time)
+Index("ix_appointments_master_start", Appointment.master_id, Appointment.start_time)
+Index("ix_activity_logs_org_created", ActivityLog.organization_id, ActivityLog.created_at, ActivityLog.id)
+Index("ix_activity_logs_user_id", ActivityLog.user_id)
+Index("ix_memberships_master_id", Membership.master_id)
+Index("ix_invitations_master_id", Invitation.master_id)
+Index("ix_client_comments_user_id", ClientComment.user_id)

@@ -9,6 +9,7 @@ from auth.auth import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
     hash_password_async,
+    hash_token,
     verify_password_async,
 )
 
@@ -75,7 +76,7 @@ async def create_user(background_tasks: BackgroundTasks, request: Request, user:
     token = secrets.token_urlsafe(32)
     verification_token = models.EmailVerificationToken(
         user_id=new_user.id,
-        token=token,
+        token=hash_token(token),
         expires_at=utc_now() + timedelta(hours=24),
     )
     db.add(verification_token)
@@ -146,7 +147,7 @@ async def login(
     refresh_token_value = create_refresh_token()
     refresh_token = models.RefreshToken(
         user_id=user.id,
-        token=refresh_token_value,
+        token=hash_token(refresh_token_value),
         expires_at=utc_now() + timedelta(days=30),
     )
     db.add(refresh_token)
@@ -172,7 +173,7 @@ async def forgot_password(
         token = secrets.token_urlsafe(32)
         reset_token = models.PasswordResetToken(
             user_id=user.id,
-            token=token,
+            token=hash_token(token),
             expires_at=utc_now() + timedelta(minutes=30),
         )
         db.add(reset_token)
@@ -196,7 +197,7 @@ async def reset_password(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(models.PasswordResetToken).where(models.PasswordResetToken.token == payload.token),
+        select(models.PasswordResetToken).where(models.PasswordResetToken.token == hash_token(payload.token)),
     )
     reset_token = result.scalars().first()
 
@@ -259,7 +260,7 @@ async def update_user(
         new_verification_token = secrets.token_urlsafe(32)
         db.add(models.EmailVerificationToken(
             user_id=user.id,
-            token=new_verification_token,
+            token=hash_token(new_verification_token),
             expires_at=utc_now() + timedelta(hours=24),
         ))
 
@@ -320,7 +321,7 @@ async def refresh_access_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(models.RefreshToken).where(models.RefreshToken.token == payload.refresh_token),
+        select(models.RefreshToken).where(models.RefreshToken.token == hash_token(payload.refresh_token)),
     )
     refresh_token = result.scalars().first()
 
@@ -339,7 +340,7 @@ async def logout(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(models.RefreshToken).where(models.RefreshToken.token == payload.refresh_token),
+        select(models.RefreshToken).where(models.RefreshToken.token == hash_token(payload.refresh_token)),
     )
     refresh_token = result.scalars().first()
     if refresh_token:
@@ -353,7 +354,7 @@ async def verify_email(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(models.EmailVerificationToken).where(models.EmailVerificationToken.token == payload.token),
+        select(models.EmailVerificationToken).where(models.EmailVerificationToken.token == hash_token(payload.token)),
     )
     verification_token = result.scalars().first()
 
@@ -386,7 +387,7 @@ async def resend_verification(
         token = secrets.token_urlsafe(32)
         verification_token = models.EmailVerificationToken(
             user_id=user.id,
-            token=token,
+            token=hash_token(token),
             expires_at=utc_now() + timedelta(hours=24),
         )
         db.add(verification_token)

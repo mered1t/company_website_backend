@@ -52,7 +52,7 @@ def send_password_reset_email(to_email: str, token: str) -> None:
 
 def send_verification_email(to_email: str, token: str) -> None:
     verify_url = _frontend_url(f"/verify-email?token={token}")
-    _send(to_email, "Confirm your email", render_email("verify_email.html", verify_url=verify_url))
+    _send(to_email, "Confirm your email", render_email("verify_email.html", verify_link=verify_url))
 
 
 def safe_send(func, *, log: tuple, **kwargs) -> None:

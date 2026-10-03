@@ -119,3 +119,17 @@ async def org_a(api):
 @pytest.fixture
 async def org_b(api):
     return await _create_tenant(api, "ownerb")
+
+@pytest.fixture
+def sent_emails(monkeypatch):
+    """Список отправленных писем (payload для resend). Токены берём из html, как пользователь из ссылки."""
+    import resend
+
+    sent = []
+
+    def fake_send(payload, *args, **kwargs):
+        sent.append(payload)
+        return {"id": "test"}
+
+    monkeypatch.setattr(resend.Emails, "send", staticmethod(fake_send))
+    return sent

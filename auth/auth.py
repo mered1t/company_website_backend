@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -43,6 +44,14 @@ async def verify_password_async(plain_password: str, hashed_password: str) -> bo
 # Фиктивный хеш: логин проверяет пароль против него, когда пользователя нет,
 # чтобы время ответа не выдавало, зарегистрирован ли email.
 DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-only")
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 токена для хранения в БД: утечка базы не раскрывает рабочие токены.
+
+    Токены длинные и случайные (256 бит), поэтому соль и медленный хеш не нужны.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
