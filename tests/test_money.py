@@ -1,5 +1,5 @@
 async def test_currencies_endpoint(api):
-    r = await api.get("/api/currencies")
+    r = await api.get("/api/v1/currencies")
     assert r.status_code == 200
     by_code = {c["code"]: c for c in r.json()}
     assert set(by_code) == {"EUR", "USD", "ALL", "UAH"}

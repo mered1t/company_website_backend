@@ -16,7 +16,7 @@ def token_from(email_payload) -> str:
 
 async def _register(api, name: str) -> str:
     email = f"{name}@example.com"
-    r = await api.post("/api/users", json={
+    r = await api.post("/api/v1/users", json={
         "username": name, "email": email, "password": PASSWORD, "accept_terms": True,
     })
     assert r.status_code in (200, 201), r.text
@@ -31,11 +31,11 @@ async def test_verification_token_is_stored_hashed_and_works(api, db, sent_email
     assert token not in stored
     assert hash_token(token) in stored
 
-    r = await api.post("/api/users/verify-email", json={"token": token})
+    r = await api.post("/api/v1/users/verify-email", json={"token": token})
     assert r.status_code in (200, 204), r.text
 
     # повторно тот же токен использовать нельзя
-    r = await api.post("/api/users/verify-email", json={"token": token})
+    r = await api.post("/api/v1/users/verify-email", json={"token": token})
     assert r.status_code == 400
 
 
@@ -44,7 +44,7 @@ async def test_stored_hash_cannot_be_used_as_token(api, db, sent_emails):
     stored = (await db.execute(select(models.EmailVerificationToken.token))).scalars().first()
 
     # даже если хеш утёк из базы, подставить его как токен нельзя
-    r = await api.post("/api/users/verify-email", json={"token": stored})
+    r = await api.post("/api/v1/users/verify-email", json={"token": stored})
     assert r.status_code in (400, 404, 422)
 
 
@@ -52,7 +52,7 @@ async def test_password_reset_flow_with_hashed_token(api, db, sent_emails):
     email = await _register(api, "resetflow")
     sent_emails.clear()
 
-    r = await api.post("/api/users/forgot-password", json={"email": email})
+    r = await api.post("/api/v1/users/forgot-password", json={"email": email})
     assert r.status_code == 204
     token = token_from(sent_emails[-1])
 
@@ -60,22 +60,22 @@ async def test_password_reset_flow_with_hashed_token(api, db, sent_emails):
     assert token not in stored
     assert hash_token(token) in stored
 
-    r = await api.post("/api/users/reset-password", json={"token": token, "new_password": "NewPassw0rd!"})
+    r = await api.post("/api/v1/users/reset-password", json={"token": token, "new_password": "NewPassw0rd!"})
     assert r.status_code == 204
 
-    r = await api.post("/api/users/token", data={"username": email, "password": PASSWORD})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": PASSWORD})
     assert r.status_code == 401
-    r = await api.post("/api/users/token", data={"username": email, "password": "NewPassw0rd!"})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": "NewPassw0rd!"})
     assert r.status_code == 200
 
     # токен одноразовый
-    r = await api.post("/api/users/reset-password", json={"token": token, "new_password": "Another1Passw0rd!"})
+    r = await api.post("/api/v1/users/reset-password", json={"token": token, "new_password": "Another1Passw0rd!"})
     assert r.status_code == 400
 
 
 async def test_refresh_token_is_stored_hashed(api, db):
     email = await _register(api, "refreshhash")
-    r = await api.post("/api/users/token", data={"username": email, "password": PASSWORD})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": PASSWORD})
     assert r.status_code == 200
     refresh = r.json()["refresh_token"]
 
@@ -85,26 +85,26 @@ async def test_refresh_token_is_stored_hashed(api, db):
 
 async def test_refresh_and_logout_flow_with_hashed_tokens(api):
     email = await _register(api, "refreshflow")
-    r = await api.post("/api/users/token", data={"username": email, "password": PASSWORD})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": PASSWORD})
     assert r.status_code == 200
     refresh = r.json()["refresh_token"]
 
-    r = await api.post("/api/users/refresh", json={"refresh_token": refresh})
+    r = await api.post("/api/v1/users/refresh", json={"refresh_token": refresh})
     assert r.status_code == 200, r.text
     assert r.json()["access_token"]
     # если refresh ротирует токен, берём новый, иначе остаётся прежний
     current = r.json().get("refresh_token") or refresh
 
-    r = await api.post("/api/users/logout", json={"refresh_token": current})
+    r = await api.post("/api/v1/users/logout", json={"refresh_token": current})
     assert r.status_code == 204, r.text
 
     # после logout токен больше не работает
-    r = await api.post("/api/users/refresh", json={"refresh_token": current})
+    r = await api.post("/api/v1/users/refresh", json={"refresh_token": current})
     assert r.status_code in (400, 401)
 
 
 async def test_refresh_rejects_unknown_token(api):
-    r = await api.post("/api/users/refresh", json={"refresh_token": "definitely-not-a-real-token"})
+    r = await api.post("/api/v1/users/refresh", json={"refresh_token": "definitely-not-a-real-token"})
     assert r.status_code in (400, 401, 422)
 
 
@@ -129,12 +129,12 @@ async def test_invitation_token_is_stored_hashed_and_preview_works(api, db, org_
     assert token not in stored
     assert hash_token(token) in stored
 
-    r = await api.get(f"/api/invitations/{token}")
+    r = await api.get(f"/api/v1/invitations/{token}")
     assert r.status_code == 200, r.text
     assert r.json()["email"] == "newbie@example.com"
 
     # хеш из базы как токен не работает
-    r = await api.get(f"/api/invitations/{hash_token(token)}")
+    r = await api.get(f"/api/v1/invitations/{hash_token(token)}")
     assert r.status_code == 404
 
 
@@ -148,8 +148,8 @@ async def test_invitation_resend_issues_new_working_token(api, db, org_a, sent_e
     second = token_from(sent_emails[-1])
 
     assert second != first
-    assert (await api.get(f"/api/invitations/{second}")).status_code == 200
-    assert (await api.get(f"/api/invitations/{first}")).status_code == 404
+    assert (await api.get(f"/api/v1/invitations/{second}")).status_code == 200
+    assert (await api.get(f"/api/v1/invitations/{first}")).status_code == 404
 
 
 async def test_invitation_responses_do_not_expose_token(api, db, org_a, sent_emails):

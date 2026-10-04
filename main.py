@@ -1,5 +1,5 @@
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import APIRouter, FastAPI, Depends, HTTPException
 
 from contextlib import asynccontextmanager
 
@@ -49,15 +49,28 @@ app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
-app.include_router(users.router, prefix="/api/users", tags=["users"])
-app.include_router(clients.router, prefix="/api/organizations/{organization_id}/clients", tags=["clients"])
-app.include_router(services.router, prefix="/api/organizations/{organization_id}/services", tags=["services"])
-app.include_router(masters.router, prefix="/api/organizations/{organization_id}/masters", tags=["masters"])
-app.include_router(appointments.router, prefix="/api/organizations/{organization_id}/appointments", tags=["appointments"])
-app.include_router(analytics.router, prefix="/api/organizations/{organization_id}/analytics", tags=["analytics"])
-app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
-app.include_router(public.router, prefix="/api/public", tags=["public"])
+API_ROUTES = [
+    (organizations.router, "/organizations", "organizations"),
+    (users.router, "/users", "users"),
+    (clients.router, "/organizations/{organization_id}/clients", "clients"),
+    (services.router, "/organizations/{organization_id}/services", "services"),
+    (masters.router, "/organizations/{organization_id}/masters", "masters"),
+    (appointments.router, "/organizations/{organization_id}/appointments", "appointments"),
+    (analytics.router, "/organizations/{organization_id}/analytics", "analytics"),
+    (invitations.router, "/invitations", "invitations"),
+    (public.router, "/public", "public"),
+]
+
+api_v1 = APIRouter(prefix="/api/v1")
+legacy_api = APIRouter(prefix="/api")
+for _router, _path, _tag in API_ROUTES:
+    api_v1.include_router(_router, prefix=_path, tags=[_tag])
+    legacy_api.include_router(_router, prefix=_path, tags=[_tag])
+
+app.include_router(api_v1)
+# Старые пути /api/... временно работают, но скрыты из документации.
+# Удалить, когда фронтенд полностью перейдёт на /api/v1.
+app.include_router(legacy_api, include_in_schema=False)
 
 
 
@@ -82,6 +95,7 @@ async def health_check(db: Annotated[AsyncSession, Depends(get_db)]):
         raise HTTPException(status_code=503, detail={"status": "error", "database": "unavailable"})
 
 
-@app.get("/api/currencies", tags=["currencies"])
+@app.get("/api/v1/currencies", tags=["currencies"])
+@app.get("/api/currencies", include_in_schema=False)
 async def list_currencies():
     return [{"code": code, **info} for code, info in CURRENCIES.items()]

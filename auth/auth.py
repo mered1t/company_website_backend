@@ -20,7 +20,7 @@ import secrets
 
 password_hash = PasswordHash.recommended()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/users/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/users/token")
 
 
 def hash_password(password: str) -> str:

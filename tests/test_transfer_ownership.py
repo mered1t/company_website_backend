@@ -5,7 +5,7 @@ PASSWORD = "Passw0rd!"
 
 async def _add_member(api, db, org, username, role):
     email = f"{username}@example.com"
-    r = await api.post("/api/users", json={
+    r = await api.post("/api/v1/users", json={
         "username": username, "email": email, "password": PASSWORD, "accept_terms": True,
     })
     assert r.status_code == 201, r.text
@@ -16,7 +16,7 @@ async def _add_member(api, db, org, username, role):
 
 
 async def _login(api, email):
-    r = await api.post("/api/users/token", data={"username": email, "password": PASSWORD})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": PASSWORD})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

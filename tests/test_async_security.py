@@ -40,7 +40,7 @@ async def test_login_checks_hash_even_for_unknown_email(api, monkeypatch):
     monkeypatch.setattr("routers.users.verify_password_async", fake_verify)
 
     resp = await api.post(
-        "/api/users/token",
+        "/api/v1/users/token",
         data={"username": "nobody@example.com", "password": "whatever-123"},
     )
     assert resp.status_code == 401

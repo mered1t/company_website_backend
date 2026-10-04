@@ -9,7 +9,7 @@ async def test_delete_user_keeps_activity_and_comments(api, db, org_a):
     ivan_headers, ivan_id = await register_and_login(api, "ivan", "ivan@example.com")
     await verify_in_db(db, "ivan@example.com")
     inv_id = await make_invitation(db, org_a.org_id, "ivan@example.com")
-    r = await api.post(f"/api/invitations/{inv_id}/accept", headers=ivan_headers)
+    r = await api.post(f"/api/v1/invitations/{inv_id}/accept", headers=ivan_headers)
     assert r.status_code == 204, r.text
 
     # Иван что-то делает: клиент (пишет в журнал) и комментарий
@@ -22,7 +22,7 @@ async def test_delete_user_keeps_activity_and_comments(api, db, org_a):
     assert r.status_code == 201, r.text
 
     # Иван удаляет аккаунт
-    r = await api.delete(f"/api/users/{ivan_id}", headers=ivan_headers)
+    r = await api.delete(f"/api/v1/users/{ivan_id}", headers=ivan_headers)
     assert r.status_code == 204, r.text
 
     # журнал остался, автор обнулился

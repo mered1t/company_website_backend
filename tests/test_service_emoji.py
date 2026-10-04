@@ -11,7 +11,7 @@ async def test_emoji_is_saved_and_returned_publicly(api, org_a):
     assert r.status_code == 201, r.text
     assert r.json()["emoji"] == "✂️"
 
-    r = await api.get(f"/api/public/{org_a.slug}/services")
+    r = await api.get(f"/api/v1/public/{org_a.slug}/services")
     assert r.status_code == 200, r.text
     assert r.json()[0]["emoji"] == "✂️"
 

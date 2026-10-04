@@ -129,7 +129,7 @@ async def test_deleted_appointment_frees_the_time(api, org_a, shop):
 
 # ---------------- публичная запись ----------------
 async def _slots(api, org, shop, day: datetime):
-    r = await api.get(f"/api/public/{org.slug}/available-slots",
+    r = await api.get(f"/api/v1/public/{org.slug}/available-slots",
                       params={"master_id": shop.master, "service_id": shop.service, "date": day.date().isoformat()})
     assert r.status_code == 200, r.text
     return r.json()
@@ -148,14 +148,14 @@ async def test_public_slots_exclude_booked_time(api, org_a, shop):
 
 async def test_public_available_dates_include_tomorrow(api, org_a, shop):
     day = tomorrow_at(0)
-    r = await api.get(f"/api/public/{org_a.slug}/available-dates",
+    r = await api.get(f"/api/v1/public/{org_a.slug}/available-dates",
                       params={"master_id": shop.master, "service_id": shop.service, "month": day.strftime("%Y-%m")})
     assert r.status_code == 200, r.text
     assert day.date().isoformat() in r.json()
 
 
 async def test_public_booking_success_creates_client(api, org_a, shop):
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))
     assert r.status_code == 201, r.text
     assert (r.json()["price"], r.json()["currency"]) == (100, "EUR")
     clients = (await api.get(f"{org_a.base}/clients", headers=org_a.headers)).json()
@@ -163,8 +163,8 @@ async def test_public_booking_success_creates_client(api, org_a, shop):
 
 
 async def test_public_booking_overlap_rejected(api, org_a, shop):
-    assert (await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))).status_code == 201
-    r = await api.post(f"/api/public/{org_a.slug}/book",
+    assert (await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))).status_code == 201
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book",
                        json=public_body(shop, tomorrow_at(12, 30), phone="+380997654321"))
     assert r.status_code == 400
     assert r.json()["detail"] == MASTER_BUSY
@@ -172,16 +172,16 @@ async def test_public_booking_overlap_rejected(api, org_a, shop):
 
 async def test_public_booking_in_the_past_rejected(api, org_a, shop):
     yesterday = tomorrow_at(12) - timedelta(days=2)
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, yesterday))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, yesterday))
     assert r.status_code == 400
     assert r.json()["detail"] == "Cannot book a time in the past"
 
 
 async def test_public_booking_limit_of_three_upcoming(api, org_a, shop):
     for hour in (10, 12, 14):
-        r = await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(hour)))
+        r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(hour)))
         assert r.status_code == 201, r.text
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(16)))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(16)))
     assert r.status_code == 400
     assert r.json()["detail"].startswith("You already have 3 upcoming appointments")
 
@@ -193,6 +193,6 @@ async def test_time_off_blocks_public_booking(api, org_a, shop):
     assert r.status_code == 201, r.text
 
     assert await _slots(api, org_a, shop, tomorrow_at(0)) == []
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=public_body(shop, tomorrow_at(12)))
     assert r.status_code == 400
     assert r.json()["detail"] == "Master does not work on this day"

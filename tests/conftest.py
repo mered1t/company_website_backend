@@ -89,23 +89,23 @@ class Tenant:
 
     @property
     def base(self) -> str:
-        return f"/api/organizations/{self.org_id}"
+        return f"/api/v1/organizations/{self.org_id}"
 
 
 async def _create_tenant(api, name: str) -> Tenant:
     email = f"{name}@example.com"
     password = "Passw0rd!"
 
-    r = await api.post("/api/users", json={
+    r = await api.post("/api/v1/users", json={
         "username": name, "email": email, "password": password, "accept_terms": True,
     })
     assert r.status_code in (200, 201), f"register failed: {r.status_code} {r.text}"
 
-    r = await api.post("/api/users/token", data={"username": email, "password": password})
+    r = await api.post("/api/v1/users/token", data={"username": email, "password": password})
     assert r.status_code == 200, f"login failed: {r.status_code} {r.text}"
     headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
-    r = await api.post("/api/organizations", json={"name": f"Shop {name}", "timezone": "Europe/Kiev"},
+    r = await api.post("/api/v1/organizations", json={"name": f"Shop {name}", "timezone": "Europe/Kiev"},
                        headers=headers)
     assert r.status_code in (200, 201), f"create org failed: {r.status_code} {r.text}"
     return Tenant(org_id=r.json()["id"], slug=r.json()["slug"], headers=headers)

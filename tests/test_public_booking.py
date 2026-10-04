@@ -29,7 +29,7 @@ async def _shop(api, org):
 
 async def test_public_booking_rejects_service_master_does_not_provide(api, org_a):
     _, service_b, master = await _shop(api, org_a)
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=_booking(service_b, master))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=_booking(service_b, master))
     assert r.status_code == 400
     assert r.json()["detail"] == NOT_PROVIDED
 
@@ -37,7 +37,7 @@ async def test_public_booking_rejects_service_master_does_not_provide(api, org_a
 async def test_public_slots_reject_service_master_does_not_provide(api, org_a):
     _, service_b, master = await _shop(api, org_a)
     day = _tomorrow().date().isoformat()
-    r = await api.get(f"/api/public/{org_a.slug}/available-slots",
+    r = await api.get(f"/api/v1/public/{org_a.slug}/available-slots",
                       params={"master_id": master, "service_id": service_b, "date": day})
     assert r.status_code == 400
     assert r.json()["detail"] == NOT_PROVIDED
@@ -46,7 +46,7 @@ async def test_public_slots_reject_service_master_does_not_provide(api, org_a):
 async def test_public_dates_reject_service_master_does_not_provide(api, org_a):
     _, service_b, master = await _shop(api, org_a)
     month = _tomorrow().strftime("%Y-%m")
-    r = await api.get(f"/api/public/{org_a.slug}/available-dates",
+    r = await api.get(f"/api/v1/public/{org_a.slug}/available-dates",
                       params={"master_id": master, "service_id": service_b, "month": month})
     assert r.status_code == 400
     assert r.json()["detail"] == NOT_PROVIDED
@@ -57,7 +57,7 @@ async def test_master_with_matching_or_no_services_passes_this_check(api, org_a)
     generalist = await make_master(api, org_a)  # без списка услуг = делает любые
 
     # ответ может быть другим (например, нет рабочих часов), но не по причине услуги
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=_booking(service_a, master))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=_booking(service_a, master))
     assert r.json().get("detail") != NOT_PROVIDED
-    r = await api.post(f"/api/public/{org_a.slug}/book", json=_booking(service_b, generalist))
+    r = await api.post(f"/api/v1/public/{org_a.slug}/book", json=_booking(service_b, generalist))
     assert r.json().get("detail") != NOT_PROVIDED

@@ -30,5 +30,5 @@ async def test_forgot_password_survives_email_failure(api, org_a, monkeypatch):
         raise RuntimeError("resend is down")
 
     monkeypatch.setattr(resend.Emails, "send", staticmethod(boom))
-    r = await api.post("/api/users/forgot-password", json={"email": "ownera@example.com"})
+    r = await api.post("/api/v1/users/forgot-password", json={"email": "ownera@example.com"})
     assert r.status_code == 204

@@ -6,7 +6,7 @@ async def test_public_masters_do_not_expose_phone(api, org_a):
     )
     assert r.status_code in (200, 201), r.text
 
-    r = await api.get(f"/api/public/{org_a.slug}/masters")
+    r = await api.get(f"/api/v1/public/{org_a.slug}/masters")
     assert r.status_code == 200, r.text
     masters = r.json()
     assert masters, "публичный список мастеров пуст"

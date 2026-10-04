@@ -127,7 +127,7 @@ async def test_public_masters_with_services(api, org_a):
     service_id = await make_service(api, org_a)
     await make_master(api, org_a, service_ids=[service_id])
 
-    r = await api.get(f"/api/public/{org_a.slug}/masters")
+    r = await api.get(f"/api/v1/public/{org_a.slug}/masters")
     assert r.status_code == 200, r.text
     data = r.json()
     assert len(data) == 1

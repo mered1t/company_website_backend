@@ -2,13 +2,13 @@
 
 
 async def test_password_length_is_limited(api):
-    r = await api.post("/api/users", json={
+    r = await api.post("/api/v1/users", json={
         "username": "longpass", "email": "longpass@example.com",
         "password": "Aa1" + "a" * 130, "accept_terms": True,
     })
     assert r.status_code == 422, r.text
 
-    r = await api.post("/api/users/token", data={"username": "x@example.com", "password": "x" * 5000})
+    r = await api.post("/api/v1/users/token", data={"username": "x@example.com", "password": "x" * 5000})
     assert r.status_code == 401, r.text
 
 
