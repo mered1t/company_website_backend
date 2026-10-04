@@ -5,6 +5,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
+from auth.auth import OwnerMembership, verify_password_async
+from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
 from common import generate_unique_slug, generate_invitation_token, log_activity
@@ -395,4 +397,44 @@ async def remove_member(
     )
 
     await db.delete(target_membership)
+    await db.commit()
+
+
+@router.post("/{organization_id}/transfer-ownership", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")
+async def transfer_ownership(
+    request: Request,
+    organization_id: int,
+    payload: TransferOwnershipRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: OwnerMembership,
+):
+    """Передать роль владельца другому участнику. Прежний владелец становится admin.
+    Нужен пароль текущего владельца."""
+    if not await verify_password_async(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
+
+    if payload.new_owner_user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are already the owner")
+
+    result = await db.execute(
+        select(models.Membership).where(
+            models.Membership.organization_id == organization_id,
+            models.Membership.user_id == payload.new_owner_user_id,
+        ),
+    )
+    target = result.scalars().first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    target.role = models.MembershipRole.owner
+    membership.role = models.MembershipRole.admin
+
+    await log_activity(
+        db, organization_id, current_user.id,
+        action="transferred", entity_type="organization", entity_id=organization_id,
+        details=f"Ownership transferred to user #{payload.new_owner_user_id}",
+    )
+
     await db.commit()

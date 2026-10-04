@@ -588,3 +588,8 @@ class PublicBookingRequest(BaseModel):
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
+
+
+class TransferOwnershipRequest(BaseModel):
+    new_owner_user_id: int
+    password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
