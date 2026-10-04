@@ -47,6 +47,17 @@ jobs:
       - name: Tests
         run: pytest -v
 
+      - name: Migrations apply on a fresh database
+        env:
+          SECRET_KEY: ci-only-secret-key
+          RESEND_API_KEY: re_ci_dummy
+          ENVIRONMENT: test
+          DATABASE_URL: postgresql+asyncpg://crm_user:crm_pass@localhost:5432/crm_migrations
+        run: |
+          PGPASSWORD=crm_pass psql -h localhost -U crm_user -d postgres -c "CREATE DATABASE crm_migrations"
+          alembic upgrade head
+          alembic check
+
       - name: Lint (pyflakes rules, advisory for now)
         continue-on-error: true
         run: ruff check . --select F --exclude alembic --exclude models/__init__.py
