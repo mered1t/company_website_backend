@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     environment: str = "production"
     email_from: str = "onboarding@resend.dev"
+    email_reply_to: str | None = None
     frontend_url: str = "https://koracrm.com"
     app_name: str = "Твоё название CRM"
 
