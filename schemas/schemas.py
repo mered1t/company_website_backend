@@ -530,6 +530,7 @@ class RevenueResponse(BaseModel):
     date_from: datetime
     date_to: datetime
     total_revenue: int
+    currency: str
 
 
 class TopClientResponse(BaseModel):
@@ -566,6 +567,50 @@ class UpcomingBirthdayResponse(BaseModel):
     birth_date: date
     days_until: int
     turning_age: int
+
+
+class RevenueTrendPoint(BaseModel):
+    period_start: datetime
+    revenue: int
+    appointments: int
+
+
+class RevenueTrendResponse(BaseModel):
+    date_from: datetime
+    date_to: datetime
+    group_by: str
+    currency: str
+    total_revenue: int
+    previous_total_revenue: int
+    change_percent: float | None
+    points: list[RevenueTrendPoint]
+
+
+class AppointmentsSummaryResponse(BaseModel):
+    date_from: datetime
+    date_to: datetime
+    currency: str
+    total: int
+    completed: int
+    cancelled: int
+    scheduled: int
+    cancellation_rate_percent: float
+    average_check: int
+
+
+class ClientsSummaryResponse(BaseModel):
+    date_from: datetime
+    date_to: datetime
+    new_clients: int
+    returning_clients: int
+    total_clients: int
+    returning_share_percent: float
+
+
+class BusiestHourCell(BaseModel):
+    weekday: int  # 0 = понедельник
+    hour: int
+    appointments: int
 
 
 class ActivityLogPublic(BaseModel):

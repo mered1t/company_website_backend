@@ -1,192 +1,119 @@
-from datetime import date as date_type, datetime as dt, timedelta
-from typing import Annotated
+from datetime import date as date_type, datetime as dt
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import analytics_service as svc
 import models
 from auth.auth import ManagerMembership
-from common import get_org_now, get_org_currency
+from common import get_org_now
 from db.database import get_db
-from enums import AppointmentStatus
 
 from schemas.schemas import (
     RevenueResponse,
+    RevenueTrendResponse,
+    AppointmentsSummaryResponse,
+    ClientsSummaryResponse,
+    BusiestHourCell,
     TopClientResponse,
     InactiveClientResponse,
     PopularServiceResponse,
     MasterWorkloadResponse,
-    UpcomingBirthdayResponse
+    UpcomingBirthdayResponse,
 )
 
 router = APIRouter()
 
+MAX_TREND_DAYS = 366
+
+
+def _period(date_from: dt, date_to: dt) -> svc.Period:
+    try:
+        return svc.make_period(date_from, date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _optional_period(date_from: dt | None = None, date_to: dt | None = None) -> svc.Period | None:
+    if date_from is None and date_to is None:
+        return None
+    if date_from is None or date_to is None:
+        raise HTTPException(status_code=422, detail="Pass both date_from and date_to, or neither")
+    return _period(date_from, date_to)
+
+
+PeriodDep = Annotated[svc.Period, Depends(_period)]
+OptionalPeriodDep = Annotated[svc.Period | None, Depends(_optional_period)]
+DB = Annotated[AsyncSession, Depends(get_db)]
+
 
 @router.get("/revenue", response_model=RevenueResponse)
-async def get_revenue(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    membership: ManagerMembership,
-    date_from: dt,
-    date_to: dt,
-):
-    currency = await get_org_currency(db, membership.organization_id)
+async def get_revenue(db: DB, membership: ManagerMembership, period: PeriodDep):
+    return await svc.revenue_total(db, membership.organization_id, period)
 
-    result = await db.execute(
-        select(func.coalesce(func.sum(models.Appointment.price), 0))
-        .where(
-            models.Appointment.organization_id == membership.organization_id,
-            models.Appointment.status == AppointmentStatus.completed,
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.start_time >= date_from,
-            models.Appointment.start_time <= date_to,
-            models.Appointment.currency == currency,
-        ),
-    )
-    total = result.scalar()
-    return {"date_from": date_from, "date_to": date_to, "total_revenue": total}
+
+@router.get("/revenue-trend", response_model=RevenueTrendResponse)
+async def get_revenue_trend(
+    db: DB,
+    membership: ManagerMembership,
+    period: PeriodDep,
+    group_by: Literal["day", "week", "month"] = "day",
+):
+    if (period.date_to - period.date_from).days > MAX_TREND_DAYS:
+        raise HTTPException(status_code=422, detail=f"Period must not exceed {MAX_TREND_DAYS} days")
+    return await svc.revenue_trend(db, membership.organization_id, period, group_by)
+
+
+@router.get("/appointments-summary", response_model=AppointmentsSummaryResponse)
+async def get_appointments_summary(db: DB, membership: ManagerMembership, period: PeriodDep):
+    return await svc.appointments_summary(db, membership.organization_id, period)
+
+
+@router.get("/clients-summary", response_model=ClientsSummaryResponse)
+async def get_clients_summary(db: DB, membership: ManagerMembership, period: PeriodDep):
+    return await svc.clients_summary(db, membership.organization_id, period)
+
+
+@router.get("/busiest-hours", response_model=list[BusiestHourCell])
+async def get_busiest_hours(db: DB, membership: ManagerMembership, period: PeriodDep):
+    return await svc.busiest_hours(db, membership.organization_id, period)
 
 
 @router.get("/top-clients", response_model=list[TopClientResponse])
 async def get_top_clients(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DB,
     membership: ManagerMembership,
-    limit: int = 10,
+    period: OptionalPeriodDep,
+    limit: int = Query(default=10, ge=1, le=100),
 ):
-    currency = await get_org_currency(db, membership.organization_id)
-
-    result = await db.execute(
-        select(
-            models.Client.id,
-            models.Client.full_name,
-            func.coalesce(func.sum(models.Appointment.price), 0).label("total_spent"),
-            func.count(models.Appointment.id).label("visits_count"),
-        )
-        .select_from(models.Client)
-        .join(models.Appointment, models.Appointment.client_id == models.Client.id)
-        .where(
-            models.Client.organization_id == membership.organization_id,
-            models.Client.deleted_at.is_(None),
-            models.Appointment.status == AppointmentStatus.completed,
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.currency == currency,
-        )
-        .group_by(models.Client.id, models.Client.full_name)
-        .order_by(func.sum(models.Appointment.price).desc())
-        .limit(limit),
-    )
-    rows = result.all()
-    return [
-        {"client_id": r.id, "full_name": r.full_name, "total_spent": r.total_spent, "visits_count": r.visits_count}
-        for r in rows
-    ]
+    return await svc.top_clients(db, membership.organization_id, limit, period)
 
 
 @router.get("/inactive-clients", response_model=list[InactiveClientResponse])
 async def get_inactive_clients(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DB,
     membership: ManagerMembership,
-    days: int = 30,
+    days: int = Query(default=30, ge=1, le=3650),
+    limit: int = Query(default=100, ge=1, le=500),
 ):
-    org_now = await get_org_now(db, membership.organization_id)
-    cutoff = org_now - timedelta(days=days)
-
-    result = await db.execute(
-        select(
-            models.Client.id,
-            models.Client.full_name,
-            func.max(models.Appointment.start_time).label("last_visit"),
-        )
-        .select_from(models.Client)
-        .outerjoin(
-            models.Appointment,
-            (models.Appointment.client_id == models.Client.id)
-            & (models.Appointment.deleted_at.is_(None))
-            & (models.Appointment.status == AppointmentStatus.completed),
-        )
-        .where(
-            models.Client.organization_id == membership.organization_id,
-            models.Client.deleted_at.is_(None),
-        )
-        .group_by(models.Client.id, models.Client.full_name)
-        .having((func.max(models.Appointment.start_time) < cutoff) | (func.max(models.Appointment.start_time).is_(None))),
-    )
-    rows = result.all()
-    return [
-        {"client_id": r.id, "full_name": r.full_name, "last_visit": r.last_visit}
-        for r in rows
-    ]
+    return await svc.inactive_clients(db, membership.organization_id, days, limit)
 
 
 @router.get("/popular-services", response_model=list[PopularServiceResponse])
 async def get_popular_services(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DB,
     membership: ManagerMembership,
-    limit: int = 10,
+    period: OptionalPeriodDep,
+    limit: int = Query(default=10, ge=1, le=100),
 ):
-    currency = await get_org_currency(db, membership.organization_id)
-
-    result = await db.execute(
-        select(
-            models.Service.id,
-            models.Service.name,
-            func.count(models.Appointment.id).label("times_booked"),
-            func.coalesce(func.sum(models.Appointment.price), 0).label("total_revenue"),
-        )
-        .select_from(models.Service)
-        .join(models.Appointment, models.Appointment.service_id == models.Service.id)
-        .where(
-            models.Service.organization_id == membership.organization_id,
-            models.Appointment.status == AppointmentStatus.completed,
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.currency == currency,
-        )
-        .group_by(models.Service.id, models.Service.name)
-        .order_by(func.count(models.Appointment.id).desc())
-        .limit(limit),
-    )
-    rows = result.all()
-    return [
-        {"service_id": r.id, "name": r.name, "times_booked": r.times_booked, "total_revenue": r.total_revenue}
-        for r in rows
-    ]
+    return await svc.popular_services(db, membership.organization_id, limit, period)
 
 
 @router.get("/masters-workload", response_model=list[MasterWorkloadResponse])
-async def get_masters_workload(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    membership: ManagerMembership,
-    date_from: dt,
-    date_to: dt,
-):
-    currency = await get_org_currency(db, membership.organization_id)
-
-    result = await db.execute(
-        select(
-            models.Master.id,
-            models.Master.full_name,
-            func.count(models.Appointment.id).label("appointments_count"),
-            func.coalesce(func.sum(models.Appointment.price), 0).label("total_revenue"),
-        )
-        .select_from(models.Master)
-        .outerjoin(
-            models.Appointment,
-            (models.Appointment.master_id == models.Master.id)
-            & (models.Appointment.deleted_at.is_(None))
-            & (models.Appointment.status == AppointmentStatus.completed)
-            & (models.Appointment.currency == currency)
-            & (models.Appointment.start_time >= date_from)
-            & (models.Appointment.start_time <= date_to),
-        )
-        .where(models.Master.organization_id == membership.organization_id)
-        .group_by(models.Master.id, models.Master.full_name)
-        .order_by(func.sum(models.Appointment.price).desc().nulls_last()),
-    )
-    rows = result.all()
-    return [
-        {"master_id": r.id, "full_name": r.full_name, "appointments_count": r.appointments_count, "total_revenue": r.total_revenue}
-        for r in rows
-    ]
+async def get_masters_workload(db: DB, membership: ManagerMembership, period: PeriodDep):
+    return await svc.masters_workload(db, membership.organization_id, period)
 
 
 def _next_birthday(birth: date_type, today: date_type) -> date_type:
