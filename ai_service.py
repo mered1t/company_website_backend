@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import analytics_service as svc
 import models
+from common import get_org_now
 from config import settings
 from plans import plan_includes_ai
 from time_utils import utc_now
@@ -44,6 +45,8 @@ Rules:
   Utilization = booked hours / working-hours capacity of the elapsed days; null means working hours are not set up.
 - Prefer recommendations that fix weak spots shown in the data (low utilization, high cancellation rates,
   lapsed clients, weak weekdays). Do not just suggest promoting the strongest days or masters unless the data supports it.
+- If "period" contains a "note", the requested period extended into the future and was cut at today;
+  never treat the missing future days as a drop or a data problem.
 - Write the report in {language}.
 - Format: plain text only, no markdown symbols such as ** or #, no tables, no numbering of headings.
   Use exactly these four section headings, each on its own line, translated into the report language:
@@ -96,7 +99,9 @@ def _pct_change(current: float, previous: float) -> float | None:
     return round((current - previous) / previous * 100, 1)
 
 
-async def collect_report_data(db: AsyncSession, org_id: int, period: svc.Period) -> dict:
+async def collect_report_data(
+    db: AsyncSession, org_id: int, period: svc.Period, requested_to: datetime | None = None,
+) -> dict:
     summary = await svc.appointments_summary(db, org_id, period)
     if summary["total"] == 0:
         raise HTTPException(status_code=422, detail="Not enough data for this period")
@@ -132,7 +137,15 @@ async def collect_report_data(db: AsyncSession, org_id: int, period: svc.Period)
 
     return {
         "currency": currency,
-        "period": {"from": period.date_from.date().isoformat(), "to": period.date_to.date().isoformat()},
+        "period": {
+            "from": period.date_from.date().isoformat(),
+            "to": period.date_to.date().isoformat(),
+            **(
+                {"note": "The requested end date is in the future, so the period was cut at today. Future days are not included."}
+                if requested_to and requested_to > period.date_to
+                else {}
+            ),
+        },
         "revenue": {
             "total": _major(trend["total_revenue"], currency),
             "previous_period_total": _major(trend["previous_total_revenue"], currency),
@@ -286,7 +299,12 @@ async def generate_report(
     if used >= settings.ai_monthly_limit:
         raise HTTPException(status_code=429, detail="Monthly AI report limit reached")
 
-    data = await collect_report_data(db, org_id, period)
+    # будущие дни в отчёт не берём: иначе они выглядят как «ноль записей» и портят сравнение с прошлым периодом
+    today_end = (await get_org_now(db, org_id)).replace(hour=23, minute=59, second=59, microsecond=999999)
+    if period.date_from > today_end:
+        raise HTTPException(status_code=422, detail="Period is in the future")
+    effective = svc.Period(period.date_from, min(period.date_to, today_end))
+    data = await collect_report_data(db, org_id, effective, requested_to=period.date_to)
 
     # занимаем слот до обращения к модели, чтобы параллельные запросы не обошли лимит
     row = R(

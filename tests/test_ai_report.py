@@ -7,7 +7,7 @@ import ai_service
 import models
 from config import settings
 
-BODY = {"date_from": "2030-01-07", "date_to": "2030-01-20", "language": "en"}
+BODY = {"date_from": "2020-01-07", "date_to": "2020-01-20", "language": "en"}
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ async def _seed(db, org):
     for client, day, hour, price in [(client_a, 7, 10, 1000), (client_a, 14, 10, 1000), (client_b, 14, 11, 2000)]:
         db.add(models.Appointment(
             organization_id=org.org_id, client_id=client.id, service_id=service.id, master_id=master.id,
-            start_time=datetime(2030, 1, day, hour), end_time=datetime(2030, 1, day, hour + 1),
+            start_time=datetime(2020, 1, day, hour), end_time=datetime(2020, 1, day, hour + 1),
             status="completed", price=price, currency="EUR",
         ))
     await db.commit()
