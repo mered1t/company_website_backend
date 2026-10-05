@@ -329,3 +329,20 @@ Index("ix_activity_logs_user_id", ActivityLog.user_id)
 Index("ix_memberships_master_id", Membership.master_id)
 Index("ix_invitations_master_id", Invitation.master_id)
 Index("ix_client_comments_user_id", ClientComment.user_id)
+
+
+class AiReport(Base):
+    __tablename__ = "ai_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    language: Mapped[str] = mapped_column(String(5), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")  # pending / done
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

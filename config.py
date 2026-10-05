@@ -19,4 +19,9 @@ class Settings(BaseSettings):
     frontend_url: str = "https://koracrm.com"
     app_name: str = "Твоё название CRM"
 
+    # ИИ-аналитика (модель и ключ задаются в переменных окружения)
+    openai_api_key: str | None = None
+    openai_model: str | None = None
+    ai_monthly_limit: int = 30
+
 settings = Settings() #type: ignore[call-arg] # Loaded from env file

@@ -615,6 +615,31 @@ class BusiestHourCell(BaseModel):
     appointments: int
 
 
+class AiReportRequest(BaseModel):
+    date_from: date
+    date_to: date
+    language: Language | None = None  # по умолчанию язык пользователя
+
+
+class AiReportResponse(BaseModel):
+    id: int
+    content: str
+    language: str
+    date_from: date
+    date_to: date
+    created_at: datetime
+    cached: bool
+    used_this_month: int
+    monthly_limit: int
+
+
+class AiUsageResponse(BaseModel):
+    plan: str
+    ai_enabled: bool
+    used_this_month: int
+    monthly_limit: int
+
+
 class ActivityLogPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import ai_service
 import analytics_service as svc
 import models
 from auth.auth import ManagerMembership
@@ -22,6 +23,9 @@ from schemas.schemas import (
     PopularServiceResponse,
     MasterWorkloadResponse,
     UpcomingBirthdayResponse,
+    AiReportRequest,
+    AiReportResponse,
+    AiUsageResponse,
 )
 
 router = APIRouter()
@@ -114,6 +118,16 @@ async def get_popular_services(
 @router.get("/masters-workload", response_model=list[MasterWorkloadResponse])
 async def get_masters_workload(db: DB, membership: ManagerMembership, period: PeriodDep):
     return await svc.masters_workload(db, membership.organization_id, period)
+
+
+@router.get("/ai-usage", response_model=AiUsageResponse)
+async def get_ai_usage(db: DB, membership: ManagerMembership):
+    return await ai_service.get_usage(db, membership.organization_id)
+
+
+@router.post("/ai-report", response_model=AiReportResponse)
+async def create_ai_report(db: DB, membership: ManagerMembership, payload: AiReportRequest):
+    return await ai_service.generate_report(db, membership, payload.date_from, payload.date_to, payload.language)
 
 
 def _next_birthday(birth: date_type, today: date_type) -> date_type:

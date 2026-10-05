@@ -27,3 +27,4 @@ resend
 slowapi
 sentry-sdk[fastapi]
 jinja2
+openai
