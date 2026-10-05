@@ -232,6 +232,7 @@ class Organization(Base):
     timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     booking_horizon_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
+    plan: Mapped[str] = mapped_column(String(20), default="basic", server_default="basic", nullable=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")

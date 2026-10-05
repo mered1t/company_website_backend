@@ -162,6 +162,7 @@ async def list_my_organizations(
             timezone=org.timezone,
             booking_horizon_days=org.booking_horizon_days,
             currency=org.currency,
+            plan=org.plan,
             role=role.value,
             master_id=master_id,
         )

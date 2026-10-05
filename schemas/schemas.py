@@ -450,6 +450,8 @@ class OrganizationPublic(BaseModel):
     timezone: str
     booking_horizon_days: int
     currency: str
+    plan: str
+
 
 
 class PublicOrganizationInfo(BaseModel):
