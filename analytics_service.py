@@ -5,9 +5,9 @@ org_id всегда берётся из авторизации на сервер
 start_time хранится как локальное время салона, поэтому группируем без пересчёта таймзон.
 """
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
-from sqlalchemy import and_, extract, func, literal_column, select
+from sqlalchemy import and_, extract, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
@@ -81,6 +81,13 @@ def _next_bucket(value: datetime, group_by: str) -> datetime:
     return value + timedelta(days=1)
 
 
+def previous_period(period: Period) -> Period:
+    """Предыдущий период такой же длины, сразу перед текущим (для сравнений)."""
+    length = period.date_to - period.date_from
+    prev_to = period.date_from - timedelta(microseconds=1)
+    return Period(prev_to - length, prev_to)
+
+
 async def revenue_trend(db: AsyncSession, org_id: int, period: Period, group_by: str) -> dict:
     assert group_by in GROUP_BY_VALUES  # значение вставляется в SQL как литерал, поэтому только из белого списка
     currency = await get_org_currency(db, org_id)
@@ -114,10 +121,7 @@ async def revenue_trend(db: AsyncSession, org_id: int, period: Period, group_by:
     total = sum(p["revenue"] for p in points)
 
     # предыдущий период такой же длины, чтобы сравнивать «яблоки с яблоками»
-    length = period.date_to - period.date_from
-    prev_to = period.date_from - timedelta(microseconds=1)
-    prev_from = prev_to - length
-    previous_total = await _revenue_sum(db, org_id, currency, Period(prev_from, prev_to))
+    previous_total = await _revenue_sum(db, org_id, currency, previous_period(period))
     change_percent = round((total - previous_total) / previous_total * 100, 1) if previous_total > 0 else None
 
     return {
@@ -334,3 +338,181 @@ async def busiest_hours(db: AsyncSession, org_id: int, period: Period) -> list[d
         .order_by(dow, hour),
     )
     return [{"weekday": int(r.dow) - 1, "hour": int(r.hour), "appointments": int(r.cnt)} for r in result.all()]
+
+
+async def masters_detail(db: AsyncSession, org_id: int, period: Period) -> list[dict]:
+    """По каждому мастеру: записи, отмены и выручка за период. Удалённые мастера видны, если у них были записи."""
+    currency = await get_org_currency(db, org_id)
+    M = models.Master
+    revenue = func.coalesce(
+        func.sum(A.price).filter(and_(A.status == AppointmentStatus.completed, A.currency == currency)), 0,
+    )
+    result = await db.execute(
+        select(
+            M.id,
+            M.full_name,
+            func.count(A.id).label("total"),
+            func.count(A.id).filter(A.status == AppointmentStatus.completed).label("completed"),
+            func.count(A.id).filter(A.status == AppointmentStatus.cancelled).label("cancelled"),
+            revenue.label("revenue"),
+        )
+        .select_from(M)
+        .outerjoin(A, and_(A.master_id == M.id, A.deleted_at.is_(None), *_period_conditions(period)))
+        .where(M.organization_id == org_id, or_(M.deleted_at.is_(None), A.id.is_not(None)))
+        .group_by(M.id, M.full_name)
+        .order_by(revenue.desc(), M.id),
+    )
+    out = []
+    for r in result.all():
+        total = int(r.total)
+        cancelled = int(r.cancelled)
+        out.append({
+            "master_id": r.id,
+            "full_name": r.full_name,
+            "appointments_total": total,
+            "completed": int(r.completed),
+            "cancelled": cancelled,
+            "cancellation_rate_percent": round(cancelled / total * 100, 1) if total else 0.0,
+            "revenue": int(r.revenue),
+        })
+    return out
+
+
+async def revenue_by_weekday(db: AsyncSession, org_id: int, period: Period) -> list[dict]:
+    """Выручка по дням недели (0 = понедельник) и средняя выручка за один такой день периода."""
+    currency = await get_org_currency(db, org_id)
+    dow = extract("isodow", A.start_time)
+    rows = (await db.execute(
+        select(
+            dow.label("dow"),
+            func.count(A.id).label("cnt"),
+            func.coalesce(func.sum(A.price), 0).label("revenue"),
+        )
+        .where(
+            A.organization_id == org_id,
+            A.status == AppointmentStatus.completed,
+            A.deleted_at.is_(None),
+            A.currency == currency,
+            *_period_conditions(period),
+        )
+        .group_by(dow),
+    )).all()
+    by_weekday = {int(r.dow) - 1: (int(r.cnt), int(r.revenue)) for r in rows}
+
+    days_count = [0] * 7
+    day = period.date_from.date()
+    last = period.date_to.date()
+    while day <= last:
+        days_count[day.weekday()] += 1
+        day += timedelta(days=1)
+
+    result = []
+    for weekday in range(7):
+        count, revenue = by_weekday.get(weekday, (0, 0))
+        result.append({
+            "weekday": weekday,
+            "completed_appointments": count,
+            "revenue": revenue,
+            "days_in_period": days_count[weekday],
+            "average_revenue_per_day": round(revenue / days_count[weekday]) if days_count[weekday] else 0,
+        })
+    return result
+
+
+def _minutes(value: str) -> int:
+    hours, minutes = value.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def _slot_minutes(start: str, end: str) -> int:
+    return max(0, _minutes(end) - _minutes(start))
+
+
+async def masters_utilization(db: AsyncSession, org_id: int, period: Period) -> list[dict]:
+    """Загрузка мастеров: занятые часы / рабочие часы. Считаем только прошедшую часть периода.
+
+    Рабочие часы берутся так же, как при записи: исключения на дату заменяют обычный график,
+    отпуск (time off) обнуляет день.
+    """
+    org_now = await get_org_now(db, org_id)
+    effective_to = min(period.date_to, org_now.replace(hour=23, minute=59, second=59, microsecond=999999))
+    if effective_to < period.date_from:
+        return []
+
+    M = models.Master
+    masters = (await db.execute(
+        select(M.id, M.full_name).where(M.organization_id == org_id, M.deleted_at.is_(None)).order_by(M.id),
+    )).all()
+    if not masters:
+        return []
+    ids = [m.id for m in masters]
+
+    first_day = period.date_from.date()
+    last_day = effective_to.date()
+    day_floor = datetime.combine(first_day, time.min)
+
+    regular: dict[tuple[int, int], list[tuple[str, str]]] = {}
+    for wh in (await db.execute(select(models.WorkingHours).where(models.WorkingHours.master_id.in_(ids)))).scalars():
+        regular.setdefault((wh.master_id, wh.day_of_week), []).append((wh.start_time, wh.end_time))
+
+    exceptions: dict[tuple[int, object], list[tuple[str, str]]] = {}
+    for ex in (await db.execute(
+        select(models.WorkingHoursException).where(
+            models.WorkingHoursException.master_id.in_(ids),
+            models.WorkingHoursException.date >= day_floor,
+            models.WorkingHoursException.date <= effective_to,
+        ),
+    )).scalars():
+        exceptions.setdefault((ex.master_id, ex.date.date()), []).append((ex.start_time, ex.end_time))
+
+    time_off: dict[int, list[tuple[datetime, datetime]]] = {}
+    for off in (await db.execute(
+        select(models.TimeOff).where(
+            models.TimeOff.master_id.in_(ids),
+            models.TimeOff.start_date <= effective_to,
+            models.TimeOff.end_date >= day_floor,
+        ),
+    )).scalars():
+        time_off.setdefault(off.master_id, []).append((off.start_date, off.end_date))
+
+    booked_rows = (await db.execute(
+        select(
+            A.master_id,
+            func.coalesce(func.sum(extract("epoch", A.end_time - A.start_time)), 0).label("seconds"),
+        )
+        .where(
+            A.organization_id == org_id,
+            A.deleted_at.is_(None),
+            A.status != AppointmentStatus.cancelled,
+            A.start_time >= period.date_from,
+            A.start_time <= effective_to,
+        )
+        .group_by(A.master_id),
+    )).all()
+    booked_minutes = {r.master_id: float(r.seconds) / 60 for r in booked_rows}
+
+    days = []
+    day = first_day
+    while day <= last_day:
+        days.append(day)
+        day += timedelta(days=1)
+
+    result = []
+    for master in masters:
+        capacity = 0
+        for day in days:
+            day_start = datetime.combine(day, time.min)
+            day_end = datetime.combine(day, time.max)
+            if any(start <= day_end and end >= day_start for start, end in time_off.get(master.id, [])):
+                continue
+            slots = exceptions.get((master.id, day)) or regular.get((master.id, day.weekday()), [])
+            capacity += sum(_slot_minutes(s, e) for s, e in slots)
+        booked = booked_minutes.get(master.id, 0.0)
+        result.append({
+            "master_id": master.id,
+            "full_name": master.full_name,
+            "capacity_hours": round(capacity / 60, 1),
+            "booked_hours": round(booked / 60, 1),
+            "utilization_percent": round(booked / capacity * 100, 1) if capacity else None,
+        })
+    return result

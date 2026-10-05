@@ -67,9 +67,13 @@ async def clean(db, org_id: int):
             used = (await db.execute(select(models.Appointment.id).where(fk == row.id).limit(1))).first()
             if used:
                 continue
-            link = models.MasterService.service_id if model is models.Service else models.MasterService.master_id
-            await db.execute(delete(models.MasterService).where(link == row.id))
-            await db.delete(row)
+            # удаляем запросами, а не через ORM: у мастера есть связанные таблицы, а ленивая загрузка в async недоступна
+            if model is models.Service:
+                await db.execute(delete(models.MasterService).where(models.MasterService.service_id == row.id))
+            else:
+                for child in (models.MasterService, models.WorkingHours, models.WorkingHoursException, models.TimeOff):
+                    await db.execute(delete(child).where(child.master_id == row.id))
+            await db.execute(delete(model).where(model.id == row.id))
     await db.commit()
     print("Демо-данные удалены")
 
@@ -101,6 +105,11 @@ async def seed(db, org_id: int):
     db.add_all(services + masters + clients)
     await db.flush()
     db.add_all([models.MasterService(master_id=m.id, service_id=s.id) for m in masters for s in services])
+    # рабочие часы пн-сб 10:00-19:00, чтобы считалась загрузка мастеров
+    db.add_all([
+        models.WorkingHours(master_id=m.id, day_of_week=d, start_time="10:00", end_time="19:00")
+        for m in masters for d in range(6)
+    ])
 
     # типы клиентов: постоянные ходят часто, обычные редко, «ушедшие» не были 60+ дней, новые появляются недавно
     loyal, regular, churned, fresh = clients[:12], clients[12:36], clients[36:50], clients[50:]
