@@ -68,6 +68,7 @@ async def create_user(background_tasks: BackgroundTasks, request: Request, user:
         username=user.username,
         email=user.email.lower(),
         password_hash=await hash_password_async(user.password),
+        language=user.language,
         terms_accepted_at=utc_now(),
     )
     db.add(new_user)
@@ -87,7 +88,7 @@ async def create_user(background_tasks: BackgroundTasks, request: Request, user:
         safe_send,
         send_verification_email,
         log=("Failed to send verification email",),
-        to_email=new_user.email, token=token,
+        to_email=new_user.email, token=token, language=new_user.language,
     )
 
     return new_user
@@ -183,7 +184,7 @@ async def forgot_password(
             safe_send,
             send_password_reset_email,
             log=("Failed to send password reset email",),
-            to_email=user.email, token=token,
+            to_email=user.email, token=token, language=user.language,
         )
 
     # Всегда одинаковый ответ, независимо от того, найден email или нет
@@ -237,6 +238,9 @@ async def update_user(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
         user.username = user_update.username
 
+    if user_update.language is not None:
+        user.language = user_update.language
+
     new_verification_token = None
     if user_update.email is not None and user_update.email.lower() != user.email.lower():
         existing = await db.execute(
@@ -272,7 +276,7 @@ async def update_user(
             safe_send,
             send_verification_email,
             log=("Failed to send verification email after email change",),
-            to_email=user.email, token=new_verification_token,
+            to_email=user.email, token=new_verification_token, language=user.language,
         )
 
     return user
@@ -397,7 +401,7 @@ async def resend_verification(
             safe_send,
             send_verification_email,
             log=("Failed to resend verification email",),
-            to_email=user.email, token=token,
+            to_email=user.email, token=token, language=user.language,
         )
 
     # Всегда одинаковый ответ, независимо от результата

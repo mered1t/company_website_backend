@@ -232,6 +232,7 @@ async def create_invitation(
 
     raw_token = generate_invitation_token()
     new_invitation = models.Invitation(
+        language=invitation.language or current_user.language,
         organization_id=organization_id,
         email=invitation.email.lower(),
         role=models.MembershipRole(invitation.role),
@@ -258,7 +259,7 @@ async def create_invitation(
         safe_send,
         send_invitation_email,
         log=("Failed to send invitation email (invitation_id=%s)", new_invitation.id,),
-        to_email=new_invitation.email, organization_name=org.name, token=raw_token,
+        to_email=new_invitation.email, organization_name=org.name, token=raw_token, language=new_invitation.language,
     )
 
     return new_invitation
@@ -300,7 +301,7 @@ async def resend_invitation(
         safe_send,
         send_invitation_email,
         log=("Failed to resend invitation email (invitation_id=%s)", invitation.id,),
-        to_email=invitation.email, organization_name=org.name, token=raw_token,
+        to_email=invitation.email, organization_name=org.name, token=raw_token, language=invitation.language,
     )
 
     await log_activity(

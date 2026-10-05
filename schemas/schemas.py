@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
+from i18n import Language
 
 import re
 
@@ -89,6 +90,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
     accept_terms: bool
+    language: Language = "en"
 
     @model_validator(mode="after")
     def check_password_strength(self) -> "UserCreate":
@@ -116,12 +118,14 @@ class UserPrivate(UserPublic):
     email: EmailStr
     email_verified: bool
     terms_accepted_at: datetime | None = None
+    language: str
 
 
 class UserUpdate(PatchModel):
-    non_nullable: ClassVar[frozenset[str]] = frozenset({"username", "email"})
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"username", "email", "language"})
     username: str | None = Field(default=None, min_length=1, max_length=50)
     email: EmailStr | None = Field(default=None, max_length=120)
+    language: Language | None = None
 
 
 class Token(BaseModel):
@@ -475,6 +479,7 @@ class InvitationCreate(BaseModel):
     email: EmailStr = Field(max_length=120)
     role: str = Field(pattern="^(admin|master)$")
     master_id: int | None = None
+    language: Language | None = None
 
 
 class InvitationPublic(BaseModel):

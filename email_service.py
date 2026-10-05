@@ -6,6 +6,7 @@ import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from config import settings
+from i18n import DEFAULT_LANGUAGE, email_subject, email_texts, normalize_language
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,22 @@ def _frontend_url(path: str) -> str:
     return f"{settings.frontend_url.rstrip('/')}{path}"
 
 
-def render_email(template_name: str, **context) -> str:
+def render_email(template_name: str, language: str | None = DEFAULT_LANGUAGE, **context) -> str:
+    lang = normalize_language(language)
     template = _env.get_template(template_name)
-    return template.render(app_name=settings.app_name, current_year=datetime.now().year, **context)
+    texts = email_texts(
+        template_name.removesuffix(".html"),
+        lang,
+        app_name=settings.app_name,
+        organization_name=context.get("organization_name", ""),
+    )
+    return template.render(
+        app_name=settings.app_name,
+        current_year=datetime.now().year,
+        lang=lang,
+        t=texts,
+        **context,
+    )
 
 
 def _send(to_email: str, subject: str, html: str) -> None:
@@ -52,23 +66,31 @@ def _send(to_email: str, subject: str, html: str) -> None:
     resend.Emails.send(payload)
 
 
-def send_invitation_email(to_email: str, organization_name: str, token: str) -> None:
+def send_invitation_email(to_email: str, organization_name: str, token: str, language: str | None = DEFAULT_LANGUAGE) -> None:
     accept_url = _frontend_url(f"/invitations/accept?token={token}")
     _send(
         to_email,
-        f"You've been invited to join {organization_name}",
-        render_email("invitation.html", organization_name=organization_name, accept_url=accept_url),
+        email_subject("invitation", language, organization_name=organization_name),
+        render_email("invitation.html", language, organization_name=organization_name, accept_url=accept_url),
     )
 
 
-def send_password_reset_email(to_email: str, token: str) -> None:
+def send_password_reset_email(to_email: str, token: str, language: str | None = DEFAULT_LANGUAGE) -> None:
     reset_url = _frontend_url(f"/reset-password?token={token}")
-    _send(to_email, "Reset your password", render_email("password_reset.html", reset_url=reset_url))
+    _send(
+        to_email,
+        email_subject("password_reset", language),
+        render_email("password_reset.html", language, reset_url=reset_url),
+    )
 
 
-def send_verification_email(to_email: str, token: str) -> None:
+def send_verification_email(to_email: str, token: str, language: str | None = DEFAULT_LANGUAGE) -> None:
     verify_url = _frontend_url(f"/verify-email?token={token}")
-    _send(to_email, "Confirm your email", render_email("verify_email.html", verify_link=verify_url))
+    _send(
+        to_email,
+        email_subject("verify_email", language),
+        render_email("verify_email.html", language, verify_link=verify_url),
+    )
 
 
 def safe_send(func, *, log: tuple, **kwargs) -> None:

@@ -26,6 +26,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     description: Mapped[str | None] = mapped_column(
         String(250),
         nullable=True,
@@ -267,6 +268,7 @@ class Invitation(Base):
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     accepted: Mapped[bool] = mapped_column(default=False)
+    language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     organization: Mapped["Organization"] = relationship(back_populates="invitations")
