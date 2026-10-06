@@ -22,8 +22,10 @@ from common import (get_owned,
                     get_owned_active,
                     log_activity,
                     restore_entity,
-                    get_org_currency)
+                    get_org_currency,
+                    get_org_now)
 from time_utils import utc_now
+from enums import AppointmentStatus
 
 router = APIRouter()
 
@@ -200,6 +202,17 @@ async def update_appointment(
 
     if appointment.start_time.tzinfo is not None:
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
+
+    # «Не пришёл» можно поставить, когда запись уже началась: во время приёма или после него
+    if appointment.status == AppointmentStatus.no_show and ("status" in update_data or "start_time" in update_data):
+        with db.no_autoflush:  # правки записи ещё не сохранены: запрос времени не должен отправлять их в базу раньше срока
+            org_now = await get_org_now(db, membership.organization_id)
+        if appointment.start_time > org_now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A no-show can only be set once the appointment has started. "
+                       "To drop a future appointment, cancel it instead.",
+            )
 
 
     if recheck_needed:

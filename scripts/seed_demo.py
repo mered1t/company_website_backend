@@ -153,7 +153,8 @@ async def seed(db, org_id: int):
                 elif day == today:
                     status = "scheduled"
                 else:
-                    status = "cancelled" if rnd.random() < cancel_p else "completed"
+                    roll = rnd.random()
+                    status = "cancelled" if roll < cancel_p else ("no_show" if roll < cancel_p + 0.05 else "completed")
                 db.add(models.Appointment(
                     organization_id=org_id, client_id=client.id, service_id=service.id, master_id=master.id,
                     start_time=start, end_time=end, status=status, price=service.price, currency=org.currency,

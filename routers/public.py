@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -29,6 +29,8 @@ from services.booking import (
 )
 
 from rate_limiter import limiter
+from email_service import safe_send, send_booking_confirmation_email
+from services.booking_tokens import create_token
 
 
 router = APIRouter()
@@ -96,6 +98,7 @@ async def public_create_booking(
     request: Request,
     slug: str,
     booking: PublicBookingRequest,
+    background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org = await get_organization_by_slug(slug, db)
@@ -172,8 +175,25 @@ async def public_create_booking(
         details=f"Public booking by {booking.client_full_name} ({booking.client_phone})",
     )
 
+    # письмо со ссылкой «отменить / перенести»: если клиент оставил email (сейчас или раньше)
+    confirmation = None
+    email_to = booking.client_email or client.email
+    if email_to:
+        confirmation = dict(
+            to_email=email_to,
+            organization_name=org.name,
+            service_name=service.name,
+            master_name=master.full_name,
+            start_time=start_time,
+            manage_token=await create_token(db, new_appointment.id, booking.language),
+            language=booking.language,
+        )
+        confirmation_log = ("Failed to send booking confirmation (appointment_id=%s)", new_appointment.id)
+
     await db.commit()
     await db.refresh(new_appointment)
+    if confirmation:
+        background_tasks.add_task(safe_send, send_booking_confirmation_email, log=confirmation_log, **confirmation)
     return new_appointment
 
 
@@ -217,3 +237,9 @@ async def get_available_dates(
 @limiter.limit("30/minute")
 async def public_organization_info(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
     return await get_organization_by_slug(slug, db)
+
+
+# управление записью по ссылке из письма (/public/booking/...)
+from routers.public_booking import router as _manage_router  # noqa: E402
+
+router.include_router(_manage_router)

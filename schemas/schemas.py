@@ -596,7 +596,9 @@ class AppointmentsSummaryResponse(BaseModel):
     completed: int
     cancelled: int
     scheduled: int
+    no_show: int
     cancellation_rate_percent: float
+    no_show_rate_percent: float
     average_check: int
 
 
@@ -665,8 +667,31 @@ class PublicBookingRequest(BaseModel):
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
+    language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
 
 
 class TransferOwnershipRequest(BaseModel):
     new_owner_user_id: int
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+
+
+class BookingManageInfo(BaseModel):
+    """Запись глазами клиента, открывшего ссылку из письма. Персональных данных клиента здесь нет."""
+    appointment_id: int
+    status: AppointmentStatus
+    start_time: datetime
+    end_time: datetime
+    service_id: int
+    service_name: str
+    master_id: int
+    master_name: str
+    price: int
+    currency: str
+    organization_name: str
+    organization_slug: str
+    can_modify: bool  # можно ли ещё отменить или перенести
+    modify_deadline: datetime  # до какого момента можно отменить или перенести
+
+
+class BookingRescheduleRequest(BaseModel):
+    start_time: datetime

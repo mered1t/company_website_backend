@@ -254,6 +254,12 @@ async def masters_workload(db: AsyncSession, org_id: int, period: Period) -> lis
     ]
 
 
+def _no_show_rate(no_show: int, completed: int) -> float:
+    """Доля неявок среди тех, кто должен был прийти: не пришёл / (пришёл + не пришёл)."""
+    expected = no_show + completed
+    return round(no_show / expected * 100, 1) if expected else 0.0
+
+
 async def appointments_summary(db: AsyncSession, org_id: int, period: Period) -> dict:
     currency = await get_org_currency(db, org_id)
     paid = and_(A.status == AppointmentStatus.completed, A.currency == currency)
@@ -264,6 +270,7 @@ async def appointments_summary(db: AsyncSession, org_id: int, period: Period) ->
             func.count(A.id).filter(A.status == AppointmentStatus.completed).label("completed"),
             func.count(A.id).filter(A.status == AppointmentStatus.cancelled).label("cancelled"),
             func.count(A.id).filter(A.status == AppointmentStatus.scheduled).label("scheduled"),
+            func.count(A.id).filter(A.status == AppointmentStatus.no_show).label("no_show"),
             func.count(A.id).filter(paid).label("paid_count"),
             func.coalesce(func.sum(A.price).filter(paid), 0).label("revenue"),
         ).where(
@@ -283,7 +290,9 @@ async def appointments_summary(db: AsyncSession, org_id: int, period: Period) ->
         "completed": int(row.completed),
         "cancelled": int(row.cancelled),
         "scheduled": int(row.scheduled),
+        "no_show": int(row.no_show),
         "cancellation_rate_percent": round(int(row.cancelled) / total * 100, 1) if total else 0.0,
+        "no_show_rate_percent": _no_show_rate(int(row.no_show), int(row.completed)),
         "average_check": round(int(row.revenue) / paid_count) if paid_count else 0,
     }
 
@@ -354,6 +363,7 @@ async def masters_detail(db: AsyncSession, org_id: int, period: Period) -> list[
             func.count(A.id).label("total"),
             func.count(A.id).filter(A.status == AppointmentStatus.completed).label("completed"),
             func.count(A.id).filter(A.status == AppointmentStatus.cancelled).label("cancelled"),
+            func.count(A.id).filter(A.status == AppointmentStatus.no_show).label("no_show"),
             revenue.label("revenue"),
         )
         .select_from(M)
@@ -373,6 +383,8 @@ async def masters_detail(db: AsyncSession, org_id: int, period: Period) -> list[
             "completed": int(r.completed),
             "cancelled": cancelled,
             "cancellation_rate_percent": round(cancelled / total * 100, 1) if total else 0.0,
+            "no_show": int(r.no_show),
+            "no_show_rate_percent": _no_show_rate(int(r.no_show), int(r.completed)),
             "revenue": int(r.revenue),
         })
     return out

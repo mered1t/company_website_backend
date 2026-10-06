@@ -6,4 +6,5 @@ from models.models import (User, Client, Service,
                            RefreshToken, ActivityLog, MasterService,
                            TimeOff, WorkingHoursException,
                            EmailVerificationToken, ClientComment,
-                           AiReport)
+                           AiReport,
+                           AppointmentToken)

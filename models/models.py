@@ -158,7 +158,7 @@ class Appointment(Base):
     __tablename__ = "appointments"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('scheduled', 'completed', 'cancelled')",
+            "status IN ('scheduled', 'completed', 'cancelled', 'no_show')",
             name="ck_appointments_status",
         ),
     )
@@ -345,4 +345,20 @@ class AiReport(Base):
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class AppointmentToken(Base):
+    """Секретная ссылка из письма: по ней клиент без логина смотрит, отменяет и переносит свою запись.
+
+    В базе лежит только хеш токена (как у приглашений): утечка базы не даёт доступ к записям.
+    """
+    __tablename__ = "appointment_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    appointment_id: Mapped[int] = mapped_column(
+        ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

@@ -24,4 +24,7 @@ class Settings(BaseSettings):
     openai_model: str | None = None
     ai_monthly_limit: int = 30
 
+    # за сколько часов до начала клиент ещё может сам отменить или перенести запись
+    booking_change_cutoff_hours: int = 2
+
 settings = Settings() #type: ignore[call-arg] # Loaded from env file

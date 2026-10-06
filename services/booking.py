@@ -135,18 +135,21 @@ async def load_service_and_master(db: AsyncSession, organization_id: int, servic
     return service, master
 
 
-async def get_busy_appointments(db: AsyncSession, master_id: int, day: date) -> list[models.Appointment]:
+async def get_busy_appointments(
+    db: AsyncSession, master_id: int, day: date, exclude_id: int | None = None,
+) -> list[models.Appointment]:
     day_start = datetime.combine(day, datetime.min.time())
     day_end = datetime.combine(day, datetime.max.time().replace(microsecond=0))
-    result = await db.execute(
-        select(models.Appointment).where(
-            models.Appointment.master_id == master_id,
-            models.Appointment.status != AppointmentStatus.cancelled,
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.start_time < day_end,
-            models.Appointment.end_time > day_start,
-        ),
+    query = select(models.Appointment).where(
+        models.Appointment.master_id == master_id,
+        models.Appointment.status != AppointmentStatus.cancelled,
+        models.Appointment.deleted_at.is_(None),
+        models.Appointment.start_time < day_end,
+        models.Appointment.end_time > day_start,
     )
+    if exclude_id is not None:
+        query = query.where(models.Appointment.id != exclude_id)  # при переносе сама запись не должна занимать слот
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -158,13 +161,14 @@ async def get_free_slots(
     now: datetime,
     *,
     first_only: bool = False,
+    exclude_id: int | None = None,
 ) -> list[tuple[datetime, datetime]]:
     """Свободные слоты мастера на день. first_only=True останавливается на первом найденном."""
     intervals = await get_available_intervals(db, master_id, day)
     if not intervals:
         return []
 
-    busy = await get_busy_appointments(db, master_id, day)
+    busy = await get_busy_appointments(db, master_id, day, exclude_id=exclude_id)
     duration = timedelta(minutes=duration_minutes)
 
     slots: list[tuple[datetime, datetime]] = []

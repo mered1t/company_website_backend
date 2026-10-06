@@ -47,6 +47,9 @@ Rules:
   lapsed clients, weak weekdays). Do not just suggest promoting the strongest days or masters unless the data supports it.
 - If "period" contains a "note", the requested period extended into the future and was cut at today;
   never treat the missing future days as a drop or a data problem.
+- A "no_show" is a client who booked and did not come. Unlike a cancellation the slot cannot be re-sold, so it is
+  lost revenue and master time. no_show_rate_percent = no_show / (completed + no_show). Treat a high rate as a
+  problem, name the masters with the most no-shows and, where it fits, suggest reminders or a deposit.
 - Write the report in {language}.
 - Format: plain text only, no markdown symbols such as ** or #, no tables, no numbering of headings.
   Use exactly these four section headings, each on its own line, translated into the report language:
@@ -129,6 +132,8 @@ async def collect_report_data(
             "completed": m["completed"],
             "cancelled": m["cancelled"],
             "cancellation_rate_percent": m["cancellation_rate_percent"],
+            "no_show": m["no_show"],
+            "no_show_rate_percent": m["no_show_rate_percent"],
             "revenue": _major(m["revenue"], currency),
             "booked_hours": u.get("booked_hours"),
             "working_hours_capacity": u.get("capacity_hours"),
@@ -174,7 +179,9 @@ async def collect_report_data(
             "completed": summary["completed"],
             "cancelled": summary["cancelled"],
             "scheduled": summary["scheduled"],
+            "no_show": summary["no_show"],
             "cancellation_rate_percent": summary["cancellation_rate_percent"],
+            "no_show_rate_percent": summary["no_show_rate_percent"],
             "average_check": _major(summary["average_check"], currency),
             "total_change_percent": _pct_change(summary["total"], prev_summary["total"]),
             "completed_change_percent": _pct_change(summary["completed"], prev_summary["completed"]),
@@ -182,7 +189,9 @@ async def collect_report_data(
                 "total": prev_summary["total"],
                 "completed": prev_summary["completed"],
                 "cancelled": prev_summary["cancelled"],
+                "no_show": prev_summary["no_show"],
                 "cancellation_rate_percent": prev_summary["cancellation_rate_percent"],
+                "no_show_rate_percent": prev_summary["no_show_rate_percent"],
                 "average_check": _major(prev_summary["average_check"], currency),
             },
         },
