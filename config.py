@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     email_from: str = "onboarding@resend.dev"
     email_reply_to: str | None = None
     frontend_url: str = "https://koracrm.com"
+    # дополнительные адреса фронтенда для CORS через запятую (адрес FRONTEND_URL разрешён всегда)
+    cors_origins: str = "http://localhost:4200"
     app_name: str = "Твоё название CRM"
 
     # ИИ-аналитика (модель и ключ задаются в переменных окружения)

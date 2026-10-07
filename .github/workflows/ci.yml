@@ -61,3 +61,9 @@ jobs:
       - name: Lint (pyflakes rules, advisory for now)
         continue-on-error: true
         run: ruff check . --select F --exclude alembic --exclude models/__init__.py
+
+      - name: Dependency audit (advisory; the weekly strict check is in security.yml)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt

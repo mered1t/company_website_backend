@@ -1,0 +1,16 @@
+# Dependabot сам присылает pull request'ы с обновлениями зависимостей, в том числе с исправлениями безопасности.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

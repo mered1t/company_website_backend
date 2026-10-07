@@ -22,6 +22,7 @@ import logging
 from config import settings
 
 from currencies import CURRENCIES
+from observability import RequestIdFilter, RequestIdMiddleware, build_cors_origins, scrub_sentry_event
 
 
 @asynccontextmanager
@@ -43,8 +44,10 @@ async def lifespan(_app: FastAPI):
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s",
 )
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RequestIdFilter())  # номер запроса в каждой строке лога
 logger = logging.getLogger(__name__)
 
 if settings.sentry_dsn:
@@ -53,6 +56,7 @@ if settings.sentry_dsn:
         traces_sample_rate=0.1,      # 10% запросов для замеров скорости, не 100%
         environment=settings.environment,
         send_default_pii=False,      # не отправлять личные данные пользователей
+        before_send=scrub_sentry_event,  # секретные токены из адресов в Sentry не отправляем
     )
 
 
@@ -88,13 +92,14 @@ app.include_router(legacy_api, include_in_schema=False)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:4200",
-    ],
+    allow_origins=build_cors_origins(settings.cors_origins, settings.frontend_url),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],  # чтобы фронтенд мог показать номер запроса в сообщении об ошибке
 )
+# Добавляется последним, поэтому обрабатывает запрос первым: номер есть даже у ответов CORS
+app.add_middleware(RequestIdMiddleware)
 
 
 @app.get("/health", tags=["health"])

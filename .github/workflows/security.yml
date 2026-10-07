@@ -1,0 +1,23 @@
+name: Security audit
+
+# Раз в неделю проверяет, нет ли в зависимостях известных уязвимостей.
+# Если находит, проверка падает и GitHub присылает письмо. Запустить вручную: вкладка Actions -> Run workflow.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Audit dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
