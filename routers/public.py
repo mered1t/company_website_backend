@@ -185,7 +185,7 @@ async def public_create_booking(
             service_name=service.name,
             master_name=master.full_name,
             start_time=start_time,
-            manage_token=await create_token(db, new_appointment.id, booking.language),
+            manage_token=await create_token(db, new_appointment.id, booking.language, email_to),
             language=booking.language,
         )
         confirmation_log = ("Failed to send booking confirmation (appointment_id=%s)", new_appointment.id)

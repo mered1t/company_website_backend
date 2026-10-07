@@ -177,6 +177,10 @@ class Appointment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
+    # для какого времени начала уже отправлено напоминание. Если запись перенесли, значение перестаёт совпадать
+    # с start_time, и напоминание уйдёт ещё раз, уже на новое время.
+    reminded_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     organization: Mapped["Organization"] = relationship(back_populates="appointments")
     client: Mapped["Client"] = relationship(back_populates="appointments")
     service: Mapped["Service"] = relationship()
@@ -361,4 +365,6 @@ class AppointmentToken(Base):
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
+    # на какой адрес клиент оставил запись: туда же уйдёт напоминание
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

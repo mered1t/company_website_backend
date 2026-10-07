@@ -27,4 +27,9 @@ class Settings(BaseSettings):
     # за сколько часов до начала клиент ещё может сам отменить или перенести запись
     booking_change_cutoff_hours: int = 2
 
+    # напоминания о записи
+    reminder_hours_before: int = 24                # за сколько часов до начала отправлять
+    reminders_in_app: bool = False                 # True: проверка идёт внутри веб-сервиса (REMINDERS_IN_APP=1)
+    reminder_check_interval_seconds: int = 900     # как часто проверять (15 минут)
+
 settings = Settings() #type: ignore[call-arg] # Loaded from env file

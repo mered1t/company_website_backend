@@ -1,9 +1,11 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import APIRouter, FastAPI, Depends, HTTPException
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
-from db.database import engine, get_db
+from db.database import AsyncSessionLocal, engine, get_db
+from services.reminders import reminder_loop
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public
 
 from slowapi import _rate_limit_exceeded_handler
@@ -24,8 +26,18 @@ from currencies import CURRENCIES
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Напоминания о записи: фоновая проверка внутри сервиса (включается REMINDERS_IN_APP=1)
+    reminder_task = None
+    if settings.reminders_in_app:
+        reminder_task = asyncio.create_task(
+            reminder_loop(AsyncSessionLocal, settings.reminder_check_interval_seconds),
+        )
     yield
     # Shutdown
+    if reminder_task:
+        reminder_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reminder_task
     await engine.dispose()
 
 

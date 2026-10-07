@@ -118,6 +118,31 @@ def send_booking_confirmation_email(
     )
 
 
+def send_booking_reminder_email(
+    to_email: str,
+    organization_name: str,
+    service_name: str,
+    master_name: str,
+    start_time: datetime,
+    manage_token: str,
+    language: str | None = DEFAULT_LANGUAGE,
+) -> None:
+    manage_url = _frontend_url(f"/booking/manage?token={manage_token}")
+    _send(
+        to_email,
+        email_subject("booking_reminder", language, organization_name=organization_name),
+        render_email(
+            "booking_reminder.html",
+            language,
+            organization_name=organization_name,
+            service_name=service_name,
+            master_name=master_name,
+            when=start_time.strftime("%d.%m.%Y %H:%M"),
+            manage_url=manage_url,
+        ),
+    )
+
+
 def safe_send(func, *, log: tuple, **kwargs) -> None:
     """Отправка письма в фоне: ошибка пишется в лог (и в Sentry), но не ломает запрос.
 

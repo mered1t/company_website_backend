@@ -15,13 +15,16 @@ def hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-async def create_token(db: AsyncSession, appointment_id: int, language: str | None) -> str:
+async def create_token(
+    db: AsyncSession, appointment_id: int, language: str | None, email: str | None = None,
+) -> str:
     """Добавляет токен в сессию (коммит делает вызывающий) и возвращает сырое значение для письма."""
     raw = secrets.token_urlsafe(32)
     db.add(models.AppointmentToken(
         appointment_id=appointment_id,
         token_hash=hash_token(raw),
         language=normalize_language(language),
+        email=email,
     ))
     return raw
 
