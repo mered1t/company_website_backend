@@ -26,7 +26,12 @@ from fastapi import BackgroundTasks
 from email_service import safe_send, send_invitation_email
 from rate_limiter import limiter
 import logging
+import re
 from time_utils import utc_now
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from services.org_data import build_export, delete_organization_data
 
 logger = logging.getLogger(__name__)
 
@@ -440,3 +445,62 @@ async def transfer_ownership(
     )
 
     await db.commit()
+
+
+@router.get("/{organization_id}/export")
+@limiter.limit("5/hour")
+async def export_organization_data(
+    request: Request,
+    organization_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: OwnerMembership,
+):
+    """Скачать все данные организации одним JSON-файлом (переносимость данных, GDPR). Только владелец."""
+    data = await build_export(db, organization_id)
+
+    await log_activity(
+        db, organization_id, current_user.id,
+        action="exported", entity_type="organization", entity_id=organization_id,
+        details="Exported all organization data",
+    )
+    await db.commit()
+
+    slug = re.sub(r"[^a-z0-9-]", "", data["organization"]["slug"].lower()) or "organization"
+    filename = f"{slug}-export-{utc_now():%Y-%m-%d}.json"
+    return JSONResponse(
+        content=jsonable_encoder(data),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class OrganizationDeleteRequest(BaseModel):
+    password: str
+    confirm_name: str  # название организации, набранное вручную: защита от случайного нажатия
+
+
+@router.post("/{organization_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")
+async def delete_organization(
+    request: Request,
+    organization_id: int,
+    payload: OrganizationDeleteRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: OwnerMembership,
+):
+    """Безвозвратно удалить организацию со всеми данными (клиенты, записи, мастера, услуги, участники).
+    Нужны пароль владельца и название организации. Аккаунты пользователей остаются."""
+    if not await verify_password_async(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
+
+    org = await db.get(models.Organization, organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if payload.confirm_name.strip() != org.name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Organization name does not match")
+
+    user_id = current_user.id
+    await delete_organization_data(db, organization_id)
+    await db.commit()
+    logger.warning("Organization %s was permanently deleted by user %s", organization_id, user_id)
