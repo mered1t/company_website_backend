@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from email_service import safe_send, send_booking_cancelled_email, send_booking_changed_email
-from i18n import DEFAULT_LANGUAGE
+from services.email_service import safe_send, send_booking_cancelled_email, send_booking_changed_email
+from services.i18n import DEFAULT_LANGUAGE
 from services.booking_tokens import create_token
 
 

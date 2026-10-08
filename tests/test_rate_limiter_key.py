@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from rate_limiter import get_client_ip
+from core.rate_limiter import get_client_ip
 
 
 def make_request(headers, host="10.0.0.1"):

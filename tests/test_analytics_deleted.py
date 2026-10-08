@@ -3,7 +3,7 @@ from datetime import datetime
 
 import models
 from tests.test_tenant_isolation import make_client, make_master, make_service
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 RANGE = "date_from=2030-01-01T00:00:00&date_to=2030-01-31T23:59:59"
 

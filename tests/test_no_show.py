@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
 
-import ai_service
-import analytics_service as svc
+from services import ai_service, analytics_service as svc
 import models
-from common import get_org_now
+from services.common import get_org_now
 from tests.test_tenant_isolation import make_appointment, make_client, make_master, make_service
 
 

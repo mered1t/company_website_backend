@@ -18,14 +18,14 @@ from services.booking import (
     create_appointment_record, persist,
 )
 
-from common import (get_owned,
-                    get_owned_active,
-                    log_activity,
-                    restore_entity,
-                    get_org_currency,
-                    get_org_now)
-from time_utils import utc_now
-from enums import AppointmentStatus
+from services.common import (get_owned,
+                             get_owned_active,
+                             log_activity,
+                             restore_entity,
+                             get_org_currency,
+                             get_org_now)
+from core.time_utils import utc_now
+from domain.enums import AppointmentStatus
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 
 router = APIRouter()

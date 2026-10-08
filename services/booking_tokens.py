@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from i18n import normalize_language
+from services.i18n import normalize_language
 
 
 def hash_token(raw: str) -> str:

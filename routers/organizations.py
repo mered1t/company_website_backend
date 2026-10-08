@@ -9,7 +9,7 @@ from auth.auth import OwnerMembership, verify_password_async
 from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
-from common import generate_unique_slug, generate_invitation_token, log_activity
+from services.common import generate_unique_slug, generate_invitation_token, log_activity
 from db.database import get_db
 from schemas import schemas
 from schemas.schemas import (OrganizationCreate,
@@ -23,11 +23,11 @@ from schemas.schemas import (OrganizationCreate,
 from datetime import timedelta
 from auth.auth import hash_token
 from fastapi import BackgroundTasks
-from email_service import safe_send, send_invitation_email
-from rate_limiter import limiter
+from services.email_service import safe_send, send_invitation_email
+from core.rate_limiter import limiter
 import logging
 import re
-from time_utils import utc_now
+from core.time_utils import utc_now
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel

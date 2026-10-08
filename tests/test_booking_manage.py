@@ -6,10 +6,10 @@ import pytest
 from sqlalchemy import func, select
 
 import models
-from common import get_org_now
-from email_service import render_email
-from i18n import SUPPORTED_LANGUAGES
-from rate_limiter import limiter
+from services.common import get_org_now
+from services.email_service import render_email
+from services.i18n import SUPPORTED_LANGUAGES
+from core.rate_limiter import limiter
 from services.booking_tokens import create_token
 
 SLUG_BASE = "/api/v1/public"

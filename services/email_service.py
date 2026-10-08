@@ -5,8 +5,8 @@ from pathlib import Path
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from config import settings
-from i18n import DEFAULT_LANGUAGE, email_subject, email_texts, normalize_language
+from core.config import settings
+from services.i18n import DEFAULT_LANGUAGE, email_subject, email_texts, normalize_language
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def warn_if_sandbox_sender() -> None:
 
 warn_if_sandbox_sender()
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "emails"
+_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates" / "emails"
 _env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
     autoescape=select_autoescape(["html"]),  # экранируем пользовательские данные

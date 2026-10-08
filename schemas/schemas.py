@@ -4,13 +4,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
-from i18n import Language
+from services.i18n import Language
 
 import re
 
-from currencies import SUPPORTED_CURRENCIES, MAX_PRICE
+from domain.currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
-from enums import AppointmentStatus
+from domain.enums import AppointmentStatus
 
 
 def _validate_timezone(value: str | None) -> str | None:

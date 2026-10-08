@@ -1,7 +1,7 @@
 import resend
 
-import email_service
-from config import settings
+from services import email_service
+from core.config import settings
 
 
 def test_email_escapes_html_in_organization_name():

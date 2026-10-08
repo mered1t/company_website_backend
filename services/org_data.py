@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 EXPORT_FORMAT_VERSION = 1
 

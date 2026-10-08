@@ -9,7 +9,7 @@ import models
 
 from datetime import datetime, UTC, timedelta
 from zoneinfo import ZoneInfo
-from enums import AppointmentStatus
+from domain.enums import AppointmentStatus
 
 
 async def get_owned(db: AsyncSession, model, obj_id: int, organization_id: int, name: str):

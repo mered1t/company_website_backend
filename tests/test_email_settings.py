@@ -1,7 +1,7 @@
 import logging
 
-import email_service
-from config import settings
+from services import email_service
+from core.config import settings
 
 
 def test_reply_to_added_when_configured(sent_emails, monkeypatch):

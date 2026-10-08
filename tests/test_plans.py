@@ -1,5 +1,5 @@
 import models
-from plans import Plan, plan_includes_ai
+from domain.plans import Plan, plan_includes_ai
 from schemas.schemas import OrganizationPublic
 
 

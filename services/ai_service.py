@@ -12,12 +12,12 @@ from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import analytics_service as svc
+from services import analytics_service as svc
 import models
-from common import get_org_now
-from config import settings
-from plans import plan_includes_ai
-from time_utils import utc_now
+from services.common import get_org_now
+from core.config import settings
+from domain.plans import plan_includes_ai
+from core.time_utils import utc_now
 
 logger = logging.getLogger(__name__)
 

@@ -3,8 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-import ai_service
-import analytics_service as svc
+from services import ai_service, analytics_service as svc
 import models
 
 
@@ -50,7 +49,7 @@ async def test_masters_detail_cancellations_per_master(db, org_a):
 async def test_deleted_master_with_history_is_visible_but_empty_deleted_is_not(db, org_a):
     service, client, a, b = await _base(db, org_a)
     db.add(_appt(org_a, client, service, a, datetime(2020, 1, 6, 10)))
-    from time_utils import utc_now
+    from core.time_utils import utc_now
     a.deleted_at = utc_now()
     b.deleted_at = utc_now()
     await db.commit()

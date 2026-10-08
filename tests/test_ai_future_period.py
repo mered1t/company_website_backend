@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-import ai_service
+from services import ai_service
 import models
 
 

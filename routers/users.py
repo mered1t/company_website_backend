@@ -26,16 +26,16 @@ from schemas.schemas import (
     VerifyEmailRequest,
     ResendVerificationRequest, MAX_PASSWORD_LENGTH)
 
-from rate_limiter import limiter
+from core.rate_limiter import limiter
 from pydantic import BaseModel, Field
 from services.account import OwnsOrganizationError, delete_user_account
 
 import secrets
 from datetime import timedelta
 from fastapi import BackgroundTasks
-from email_service import safe_send, send_password_reset_email, send_verification_email
+from services.email_service import safe_send, send_password_reset_email, send_verification_email
 import logging
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 
 router = APIRouter()

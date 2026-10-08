@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 import models
 from tests.test_invitations import verify_in_db
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 
 def test_utc_now_is_naive_utc():

@@ -2,9 +2,9 @@ import re
 
 import pytest
 
-import email_service
-from config import settings
-from i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES, email_subject, normalize_language
+from services import email_service
+from core.config import settings
+from services.i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES, email_subject, normalize_language
 
 PASSWORD = "Passw0rd!"
 

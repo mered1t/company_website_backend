@@ -9,11 +9,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from common import check_booking_horizon, get_org_now, log_activity
-from config import settings
+from services.common import check_booking_horizon, get_org_now, log_activity
+from core.config import settings
 from db.database import get_db
-from enums import AppointmentStatus
-from rate_limiter import limiter
+from domain.enums import AppointmentStatus
+from core.rate_limiter import limiter
 from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleRequest
 from services.booking import check_slot_free, get_free_slots, persist
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email

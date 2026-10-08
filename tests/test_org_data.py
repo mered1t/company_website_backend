@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 import models
 from auth.auth import create_access_token, hash_password
 from db.database import Base
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 PASSWORD = "Passw0rd!"  # пароль владельцев в тестовых организациях (см. conftest)
 

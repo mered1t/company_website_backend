@@ -28,15 +28,15 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientCommentPublic,
                              ClientCommentUpdate)
 
-from common import (get_owned,
-                    log_activity,
-                    check_no_active_appointments,
-                    get_owned_active,
-                    restore_entity,
-                    check_no_history)
+from services.common import (get_owned,
+                             log_activity,
+                             check_no_active_appointments,
+                             get_owned_active,
+                             restore_entity,
+                             check_no_history)
 
-from enums import AppointmentStatus
-from time_utils import utc_now
+from domain.enums import AppointmentStatus
+from core.time_utils import utc_now
 
 router = APIRouter()
 

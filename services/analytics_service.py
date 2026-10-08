@@ -11,8 +11,8 @@ from sqlalchemy import and_, extract, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from common import get_org_currency, get_org_now
-from enums import AppointmentStatus
+from services.common import get_org_currency, get_org_now
+from domain.enums import AppointmentStatus
 
 GROUP_BY_VALUES = ("day", "week", "month")
 

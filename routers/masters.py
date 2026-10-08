@@ -19,14 +19,14 @@ from schemas.schemas import (MasterCreate,
                              WorkingHoursExceptionCreate,
                              WorkingHoursExceptionPublic)
 
-from common import (log_activity,
-                    check_no_active_appointments,
-                    restore_entity,
-                    check_no_history,
-                    find_conflicting_appointments, get_owned_active)
+from services.common import (log_activity,
+                             check_no_active_appointments,
+                             restore_entity,
+                             check_no_history,
+                             find_conflicting_appointments, get_owned_active)
 
 from datetime import datetime as full_dt, time
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 router = APIRouter()
 

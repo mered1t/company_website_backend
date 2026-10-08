@@ -9,7 +9,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from config import settings
+from core.config import settings
 
 # ---------- ЗАЩИТА: тесты только на локальной базе crm_test ----------
 _url = make_url(settings.database_url).set(database="crm_test")
@@ -25,7 +25,7 @@ settings.sentry_dsn = None                 # в Sentry из тестов нич�
 import models  # noqa: E402,F401  (регистрирует все таблицы)
 from db.database import Base, get_db  # noqa: E402
 from main import app  # noqa: E402
-from rate_limiter import limiter  # noqa: E402
+from core.rate_limiter import limiter  # noqa: E402
 
 limiter.enabled = False  # иначе на регистрации/логине словим 429
 

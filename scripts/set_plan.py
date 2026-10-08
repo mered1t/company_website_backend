@@ -21,8 +21,8 @@ from sqlalchemy.engine import make_url  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 import models  # noqa: E402
-from config import settings  # noqa: E402
-from plans import Plan  # noqa: E402
+from core.config import settings  # noqa: E402
+from domain.plans import Plan  # noqa: E402
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres"}
 

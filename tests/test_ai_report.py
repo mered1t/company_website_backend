@@ -3,9 +3,9 @@ from datetime import datetime
 
 import pytest
 
-import ai_service
+from services import ai_service
 import models
-from config import settings
+from core.config import settings
 
 BODY = {"date_from": "2020-01-07", "date_to": "2020-01-20", "language": "en"}
 

@@ -9,9 +9,8 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-from config import settings
+from core.config import settings
 from db.database import Base
-import models
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("+asyncpg", ""))

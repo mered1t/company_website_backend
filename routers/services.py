@@ -10,14 +10,14 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
-from common import (get_owned,
-                    log_activity,
-                    check_no_active_appointments,
-                    get_owned_active,
-                    restore_entity,
-                    check_no_history)
+from services.common import (get_owned,
+                             log_activity,
+                             check_no_active_appointments,
+                             get_owned_active,
+                             restore_entity,
+                             check_no_history)
 
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 router = APIRouter()
 

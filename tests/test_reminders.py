@@ -8,16 +8,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import models
-from common import get_org_now
-from config import settings
-from email_service import render_email
-from i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES
+from services.common import get_org_now
+from core.config import settings
+from services.email_service import render_email
+from services.i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES
 from main import app
-from rate_limiter import limiter
+from core.rate_limiter import limiter
 from services.booking_tokens import hash_token
 from services.reminders import reminder_loop, send_due_reminders
 from tests.test_booking_manage import SLUG_BASE, _book_body, _day, _seed
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 
 @pytest.fixture

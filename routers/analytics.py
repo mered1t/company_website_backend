@@ -5,11 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import ai_service
-import analytics_service as svc
+from services import ai_service, analytics_service as svc
 import models
 from auth.auth import ManagerMembership
-from common import get_org_now
+from services.common import get_org_now
 from db.database import get_db
 
 from schemas.schemas import (

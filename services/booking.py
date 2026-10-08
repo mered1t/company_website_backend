@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from common import get_available_intervals, get_org_currency, get_owned_active
-from enums import AppointmentStatus
+from services.common import get_available_intervals, get_org_currency, get_owned_active
+from domain.enums import AppointmentStatus
 
 OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
 MASTER_BUSY = "Master already has an appointment at this time"

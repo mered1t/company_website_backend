@@ -16,11 +16,10 @@ from schemas.schemas import (ServicePublic,
 
 
 from datetime import date as date_type, timedelta
-from common import log_activity, check_booking_horizon, get_org_now
-from enums import AppointmentStatus
+from services.common import log_activity, check_booking_horizon, get_org_now
+from domain.enums import AppointmentStatus
 
 from services.booking import (
-    check_slot_free, create_appointment_record,
     load_service_and_master, get_free_slots,
 )
 
@@ -28,8 +27,8 @@ from services.booking import (
     check_slot_free, create_appointment_record,
 )
 
-from rate_limiter import limiter
-from email_service import safe_send, send_booking_confirmation_email
+from core.rate_limiter import limiter
+from services.email_service import safe_send, send_booking_confirmation_email
 from services.booking_tokens import create_token
 
 

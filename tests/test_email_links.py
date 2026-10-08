@@ -1,4 +1,4 @@
-from email_service import (
+from services.email_service import (
     send_invitation_email,
     send_password_reset_email,
     send_verification_email,

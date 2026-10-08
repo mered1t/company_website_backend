@@ -11,7 +11,7 @@ from routers import users, clients, services, masters, appointments, analytics, 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from rate_limiter import limiter
+from core.rate_limiter import limiter
 
 from sqlalchemy import text
 from typing import Annotated
@@ -19,10 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import sentry_sdk
 import logging
-from config import settings
+from core.config import settings
 
-from currencies import CURRENCIES
-from observability import RequestIdFilter, RequestIdMiddleware, build_cors_origins, scrub_sentry_event
+from domain.currencies import CURRENCIES
+from core.observability import RequestIdFilter, RequestIdMiddleware, build_cors_origins, scrub_sentry_event
 
 
 @asynccontextmanager

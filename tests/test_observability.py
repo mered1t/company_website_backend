@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from observability import (RequestIdFilter, build_cors_origins, mask_secrets, request_id_var, scrub_sentry_event)
+from core.observability import (RequestIdFilter, build_cors_origins, mask_secrets, request_id_var, scrub_sentry_event)
 
 SECRET = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd"
 

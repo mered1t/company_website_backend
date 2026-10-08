@@ -21,12 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from common import to_org_local
-from config import settings
-from email_service import send_booking_reminder_email
-from enums import AppointmentStatus
+from services.common import to_org_local
+from core.config import settings
+from services.email_service import send_booking_reminder_email
+from domain.enums import AppointmentStatus
 from services.booking_tokens import create_token, hash_token
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 logger = logging.getLogger(__name__)
 

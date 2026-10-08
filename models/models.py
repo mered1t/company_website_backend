@@ -8,14 +8,13 @@ from sqlalchemy import (DDL,
                         UniqueConstraint,
                         Index, event, CheckConstraint)
 
-from enums import AppointmentStatus
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from enums import AppointmentStatus
+from domain.enums import AppointmentStatus
 
 from db.database import Base
 from enum import Enum
 from typing import Optional
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 class User(Base):
     __tablename__ = "users"

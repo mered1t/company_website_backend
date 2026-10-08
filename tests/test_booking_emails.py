@@ -7,10 +7,10 @@ import resend
 from sqlalchemy import select
 
 import models
-from common import get_org_now
-from email_service import render_email
-from i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES
-from rate_limiter import limiter
+from services.common import get_org_now
+from services.email_service import render_email
+from services.i18n import EMAIL_STRINGS, SUPPORTED_LANGUAGES
+from core.rate_limiter import limiter
 from services.booking_tokens import create_token
 
 PUBLIC = "/api/v1/public"

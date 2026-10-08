@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from auth.auth import CurrentUser, hash_token
-from common import log_activity
+from services.common import log_activity
 from db.database import get_db
 from schemas.schemas import InvitationPreview, InvitationPublic
 
@@ -22,7 +22,7 @@ def _require_verified_email(user: models.User) -> None:
 
 
 from sqlalchemy.orm import selectinload
-from time_utils import utc_now
+from core.time_utils import utc_now
 
 
 @router.get("/{token}", response_model=InvitationPreview)
