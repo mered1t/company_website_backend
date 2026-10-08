@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import select, func, delete, update
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from auth.auth import CurrentUser, create_refresh_token
@@ -27,6 +27,8 @@ from schemas.schemas import (
     ResendVerificationRequest, MAX_PASSWORD_LENGTH)
 
 from rate_limiter import limiter
+from pydantic import BaseModel, Field
+from services.account import OwnsOrganizationError, delete_user_account
 
 import secrets
 from datetime import timedelta
@@ -282,39 +284,33 @@ async def update_user(
     return user
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    user_id: int,
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+
+
+@router.post("/me/delete", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")
+async def delete_my_account(
+    request: Request,
+    payload: DeleteAccountRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this user")
+    """Безвозвратно удалить свой аккаунт. Нужен пароль.
+    Владелец организации сначала передаёт владение другому участнику или удаляет организацию."""
+    if not await verify_password_async(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
 
-    result = await db.execute(select(models.User).where(models.User.id == user_id))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    owner_check = await db.execute(
-        select(models.Membership).where(
-            models.Membership.user_id == user_id,
-            models.Membership.role == models.MembershipRole.owner,
-        ),
-    )
-    if owner_check.scalars().first():
+    user_id = current_user.id
+    try:
+        await delete_user_account(db, current_user)
+    except OwnsOrganizationError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete account while you own an organization. Transfer ownership or delete the organization first.",
         )
-
-    await db.execute(delete(models.RefreshToken).where(models.RefreshToken.user_id == user_id))
-    await db.execute(delete(models.PasswordResetToken).where(models.PasswordResetToken.user_id == user_id))
-    await db.execute(delete(models.EmailVerificationToken).where(models.EmailVerificationToken.user_id == user_id))
-    await db.execute(delete(models.Membership).where(models.Membership.user_id == user_id))
-
-    await db.delete(user)
     await db.commit()
+    logger.warning("User account %s was permanently deleted", user_id)
 
 
 @router.post("/refresh", response_model=Token)

@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 import models
+from auth.auth import hash_password
 from tests.test_invitations import make_invitation, register_and_login, verify_in_db
 from tests.test_tenant_isolation import make_client, make_master, make_service
 
@@ -22,7 +23,11 @@ async def test_delete_user_keeps_activity_and_comments(api, db, org_a):
     assert r.status_code == 201, r.text
 
     # Иван удаляет аккаунт
-    r = await api.delete(f"/api/v1/users/{ivan_id}", headers=ivan_headers)
+    # удаление аккаунта требует пароль: задаём пользователю известный
+    user = await db.get(models.User, ivan_id)
+    user.password_hash = hash_password("Passw0rd!")
+    await db.commit()
+    r = await api.post("/api/v1/users/me/delete", headers=ivan_headers, json={"password": "Passw0rd!"})
     assert r.status_code == 204, r.text
 
     # журнал остался, автор обнулился
