@@ -2,7 +2,7 @@ from datetime import timedelta
 from datetime import datetime as dt
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ from common import (get_owned,
                     get_org_now)
 from time_utils import utc_now
 from enums import AppointmentStatus
+from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 
 router = APIRouter()
 
@@ -152,6 +153,7 @@ async def get_appointment(
 
 @router.patch("/{appointment_id}", response_model=AppointmentPublic)
 async def update_appointment(
+    background_tasks: BackgroundTasks,
     appointment_id: int,
     appointment_update: AppointmentUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -163,6 +165,8 @@ async def update_appointment(
     _check_can_modify(membership, appointment)
 
     update_data = appointment_update.model_dump(exclude_unset=True)
+    old_status, old_start = appointment.status, appointment.start_time
+    old_master_id, old_service_id = appointment.master_id, appointment.service_id
 
     # Проверяем, что переданные id принадлежат ЭТОЙ организации
     if "client_id" in update_data:
@@ -230,8 +234,30 @@ async def update_appointment(
         details=f"Updated fields: {', '.join(update_data.keys())}",
     )
 
+    # Письмо клиенту: будущую запись отменили или поменяли время, мастера, услугу.
+    # Прошедшие записи и правка заметок/статуса письма не вызывают.
+    notification = None
+    if old_status == AppointmentStatus.scheduled:
+        with db.no_autoflush:
+            org_now = await get_org_now(db, membership.organization_id)
+        if appointment.status == AppointmentStatus.cancelled and old_start > org_now:
+            notification = await prepare_cancelled_email(db, appointment, by_salon=True)
+        elif (
+            appointment.status == AppointmentStatus.scheduled
+            and appointment.start_time > org_now
+            and (appointment.start_time != old_start
+                 or appointment.master_id != old_master_id
+                 or appointment.service_id != old_service_id)
+        ):
+            notification = await prepare_changed_email(
+                db, appointment,
+                old_start=old_start if appointment.start_time != old_start else None,
+                by_salon=True,
+            )
+
     await persist(db, commit=True)
     await db.refresh(appointment)
+    dispatch(background_tasks, notification)
     return appointment
 
 

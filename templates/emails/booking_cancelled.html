@@ -1,0 +1,25 @@
+{% extends "base_email.html" %}
+
+{% block content %}
+<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
+<p style="color:#374151; font-size:14px; line-height:1.6;">
+  {% if by_salon %}{{ t.body_salon }}{% else %}{{ t.body_client }}{% endif %}
+</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size:14px; color:#374151;">
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_service }}</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ service_name }}</b></td>
+  </tr>
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_master }}</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ master_name }}</b></td>
+  </tr>
+  <tr>
+    <td style="padding:8px 0; color:#6b7280;">{{ t.label_when }}</td>
+    <td style="padding:8px 0; text-align:right;"><b>{{ when }}</b></td>
+  </tr>
+</table>
+<p style="color:#6b7280; font-size:13px; line-height:1.6;">
+  {{ t.footer }}
+</p>
+{% endblock %}

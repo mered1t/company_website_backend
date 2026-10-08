@@ -5,7 +5,7 @@
 from datetime import date as date_type, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
@@ -16,6 +16,7 @@ from enums import AppointmentStatus
 from rate_limiter import limiter
 from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleRequest
 from services.booking import check_slot_free, get_free_slots, persist
+from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
 
 router = APIRouter()
@@ -85,7 +86,12 @@ async def get_booking_slots(
 
 @router.post("/booking/{token}/cancel", response_model=BookingManageInfo)
 @limiter.limit("10/hour")
-async def cancel_booking(request: Request, token: str, db: Annotated[AsyncSession, Depends(get_db)]):
+async def cancel_booking(
+    request: Request,
+    token: str,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     appointment = await load_by_token(db, token)
     org_now = await get_org_now(db, appointment.organization_id)
 
@@ -99,8 +105,10 @@ async def cancel_booking(request: Request, token: str, db: Annotated[AsyncSessio
         action="updated", entity_type="appointment", entity_id=appointment.id,
         details="Cancelled by the client via the link from the email",
     )
+    notification = await prepare_cancelled_email(db, appointment, by_salon=False)
     info = _info(appointment, org_now)  # собираем до commit: после него объекты могут устареть
     await db.commit()
+    dispatch(background_tasks, notification)
     return info
 
 
@@ -110,6 +118,7 @@ async def reschedule_booking(
     request: Request,
     token: str,
     body: BookingRescheduleRequest,
+    background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Переносит ту же запись на новое время (отмены в статистике не появляется)."""
@@ -134,6 +143,8 @@ async def reschedule_booking(
         details=f"Rescheduled by the client via the link from the email: {old_start:%Y-%m-%d %H:%M} -> {new_start:%Y-%m-%d %H:%M}",
     )
     await persist(db, commit=False)  # защита от двойной записи превращается в 400
+    notification = await prepare_changed_email(db, appointment, old_start=old_start, by_salon=False)
     info = _info(appointment, org_now)
     await db.commit()
+    dispatch(background_tasks, notification)
     return info
