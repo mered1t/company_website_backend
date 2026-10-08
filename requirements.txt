@@ -8,7 +8,7 @@ fastapi==0.141.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 packaging==26.3
-pwdlib==0.3.1
+pwdlib[argon2]==0.3.1
 pydantic==2.13.4
 pydantic-settings==2.15.0
 pydantic_core==2.46.4
@@ -21,10 +21,11 @@ starlette==1.6.0
 uvicorn==0.52.3
 psycopg2-binary==2.9.12
 asyncpg==0.31.0
-pwdlib[argon2]
-python-multipart
-resend
-slowapi
-sentry-sdk[fastapi]
-jinja2
-openai
+python-multipart==0.0.32
+resend==2.42.0
+slowapi==0.1.10
+sentry-sdk[fastapi]==2.70.0
+Jinja2==3.1.6
+openai==3.24.0
+argon2-cffi==25.1.0
+limits==5.8.0
