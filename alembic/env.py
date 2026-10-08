@@ -11,6 +11,7 @@ from alembic import context
 
 from core.config import settings
 from db.database import Base
+import models  # noqa: F401  (нужен, чтобы alembic видел таблицы)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("+asyncpg", ""))
