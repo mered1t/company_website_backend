@@ -28,6 +28,7 @@ from domain.enums import AppointmentStatus
 from services.booking_tokens import create_token, hash_token
 from core.time_utils import utc_now
 from services.billing import access_filter
+from services.billing_notices import send_due_billing_notices
 
 logger = logging.getLogger(__name__)
 
@@ -186,4 +187,14 @@ async def reminder_loop(session_factory, interval_seconds: int, initial_delay: f
             raise
         except Exception:
             logger.exception("Booking reminders check failed")
+        # письма владельцам о конце пробного периода и подписки; сбой здесь не мешает напоминаниям и наоборот
+        try:
+            async with session_factory() as db:
+                notices = await send_due_billing_notices(db)
+            if notices:
+                logger.info("Sent %s billing notice(s)", notices)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Billing notices check failed")
         await asyncio.sleep(interval_seconds)

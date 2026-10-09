@@ -245,6 +245,9 @@ class Organization(Base):
     is_free: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     is_blocked: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     billing_note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # письма о конце подписки: какое отправлено последним и для какой даты конца доступа (см. services/billing_notices.py)
+    billing_notice_stage: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
+    billing_notice_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")
