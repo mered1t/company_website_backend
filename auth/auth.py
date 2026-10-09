@@ -13,8 +13,11 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import joinedload
+
 from db.database import get_db
 import models
+from domain.subscription import SubscriptionStatus, get_subscription
 
 import secrets
 
@@ -122,13 +125,26 @@ async def get_current_user(
 CurrentUser = Annotated[models.User, Depends(get_current_user)]
 
 
-async def get_current_membership(
+async def get_platform_admin(current_user: CurrentUser) -> models.User:
+    if not current_user.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin only")
+    return current_user
+
+
+PlatformAdmin = Annotated[models.User, Depends(get_platform_admin)]
+
+
+async def get_membership_unrestricted(
     organization_id: int,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> models.Membership:
+    """Членство без проверки подписки. Нужно там, где доступ должен остаться и у закрытой организации:
+    данные подписки, выгрузка данных, удаление организации."""
     result = await db.execute(
-        select(models.Membership).where(
+        select(models.Membership)
+        .options(joinedload(models.Membership.organization))
+        .where(
             models.Membership.user_id == current_user.id,
             models.Membership.organization_id == organization_id,
         ),
@@ -142,14 +158,34 @@ async def get_current_membership(
     return membership
 
 
+AnyStatusMembership = Annotated[models.Membership, Depends(get_membership_unrestricted)]
+
+
+async def get_current_membership(membership: AnyStatusMembership) -> models.Membership:
+    """Членство + проверка подписки: закрытая организация получает 402 (оплата) или 403 (приостановлена)."""
+    sub = get_subscription(membership.organization)
+    if sub.status == SubscriptionStatus.blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This organization is suspended. Please contact support.",
+        )
+    if not sub.has_access:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Subscription expired. Please renew to continue using the service.",
+        )
+    return membership
+
+
 CurrentMembership = Annotated[models.Membership, Depends(get_current_membership)]
 
 
-def require_role(*allowed_roles: "models.MembershipRole | str"):
+def require_role(*allowed_roles: "models.MembershipRole | str", check_subscription: bool = True):
     # Приводим всё к enum: опечатка в названии роли упадёт при запуске приложения, а не молча
     allowed = {models.MembershipRole(r) for r in allowed_roles}
+    base = get_current_membership if check_subscription else get_membership_unrestricted
 
-    async def checker(membership: CurrentMembership) -> models.Membership:
+    async def checker(membership: Annotated[models.Membership, Depends(base)]) -> models.Membership:
         if membership.role not in allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return membership
@@ -164,6 +200,11 @@ ManagerMembership = Annotated[
 OwnerMembership = Annotated[
     models.Membership,
     Depends(require_role(models.MembershipRole.owner)),
+]
+# владелец без проверки подписки: выгрузка данных и удаление организации работают и у закрытой организации
+OwnerMembershipAnyStatus = Annotated[
+    models.Membership,
+    Depends(require_role(models.MembershipRole.owner, check_subscription=False)),
 ]
 
 

@@ -30,16 +30,20 @@ from services.booking import (
 from core.rate_limiter import limiter
 from services.email_service import safe_send, send_booking_confirmation_email
 from services.booking_tokens import create_token
+from services.billing import ensure_booking_enabled
+from domain.subscription import get_subscription
 
 
 router = APIRouter()
 
 
-async def get_organization_by_slug(slug: str, db: AsyncSession) -> models.Organization:
+async def get_organization_by_slug(slug: str, db: AsyncSession, *, require_booking: bool = True) -> models.Organization:
     result = await db.execute(select(models.Organization).where(models.Organization.slug == slug))
     org = result.scalars().first()
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if require_booking:
+        ensure_booking_enabled(org)  # подписка закончилась: публичная запись выключена
     return org
 
 
@@ -235,7 +239,10 @@ async def get_available_dates(
 @router.get("/{slug}", response_model=PublicOrganizationInfo)
 @limiter.limit("30/minute")
 async def public_organization_info(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
-    return await get_organization_by_slug(slug, db)
+    org = await get_organization_by_slug(slug, db, require_booking=False)
+    info = PublicOrganizationInfo.model_validate(org)
+    info.booking_enabled = get_subscription(org).booking_enabled  # страница записи сама покажет «запись недоступна»
+    return info
 
 
 # управление записью по ссылке из письма (/public/booking/...)

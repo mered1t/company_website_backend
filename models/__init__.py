@@ -8,3 +8,5 @@ from models.models import (User, Client, Service,
                            EmailVerificationToken, ClientComment,
                            AiReport,
                            AppointmentToken)
+
+from models.models import Payment  # noqa: F401  (таблица платежей)

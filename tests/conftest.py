@@ -108,7 +108,19 @@ async def _create_tenant(api, name: str) -> Tenant:
     r = await api.post("/api/v1/organizations", json={"name": f"Shop {name}", "timezone": "Europe/Kiev"},
                        headers=headers)
     assert r.status_code in (200, 201), f"create org failed: {r.status_code} {r.text}"
-    return Tenant(org_id=r.json()["id"], slug=r.json()["slug"], headers=headers)
+    org_id = r.json()["id"]
+
+    # Тесты писались до подписки. Даём организации оплаченный basic: доступ есть, ИИ нет, как раньше.
+    # Пробный период, льготный и закрытый доступ проверяют tests/test_subscription.py и test_billing_admin.py.
+    from datetime import timedelta
+    from core.time_utils import utc_now
+
+    async with TestSession() as session:
+        org = await session.get(models.Organization, org_id)
+        org.paid_until = utc_now() + timedelta(days=365)
+        await session.commit()
+
+    return Tenant(org_id=org_id, slug=r.json()["slug"], headers=headers)
 
 
 @pytest.fixture

@@ -18,6 +18,7 @@ from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleR
 from services.booking import check_slot_free, get_free_slots, persist
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
+from services.billing import ensure_booking_enabled
 
 router = APIRouter()
 
@@ -76,6 +77,7 @@ async def get_booking_slots(
     """Свободное время у того же мастера на ту же длительность. Сама запись слот не занимает."""
     appointment = await load_by_token(db, token)
     org_now = await get_org_now(db, appointment.organization_id)
+    ensure_booking_enabled(appointment.organization)  # у закрытого салона новое время выбрать нельзя
     _ensure_modifiable(appointment, org_now)
     await check_booking_horizon(db, appointment.organization_id, date)
 
@@ -124,6 +126,7 @@ async def reschedule_booking(
     """Переносит ту же запись на новое время (отмены в статистике не появляется)."""
     appointment = await load_by_token(db, token)
     org_now = await get_org_now(db, appointment.organization_id)
+    ensure_booking_enabled(appointment.organization)
     _ensure_modifiable(appointment, org_now)
 
     new_start = body.start_time.replace(tzinfo=None)

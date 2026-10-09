@@ -17,7 +17,7 @@ ORG_TABLES = {
     "time_off", "working_hours_exceptions", "clients", "client_comments", "appointments", "appointment_tokens",
     "activity_logs", "ai_reports",
 }
-GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens"}
+GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments"}
 
 
 def test_every_table_is_classified():

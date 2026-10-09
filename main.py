@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 
 from db.database import AsyncSessionLocal, engine, get_db
 from services.reminders import reminder_loop
-from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public
+from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public, admin
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -82,6 +82,9 @@ legacy_api = APIRouter(prefix="/api")
 for _router, _path, _tag in API_ROUTES:
     api_v1.include_router(_router, prefix=_path, tags=[_tag])
     legacy_api.include_router(_router, prefix=_path, tags=[_tag])
+
+# админка платформы только в /api/v1 (старых путей /api/... у неё нет)
+api_v1.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 app.include_router(api_v1)
 # Старые пути /api/... временно работают, но скрыты из документации.

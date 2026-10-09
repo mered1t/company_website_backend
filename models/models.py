@@ -15,6 +15,7 @@ from db.database import Base
 from enum import Enum
 from typing import Optional
 from core.time_utils import utc_now
+from domain.subscription import default_trial_end
 
 class User(Base):
     __tablename__ = "users"
@@ -24,6 +25,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # админ платформы: доступ к /api/v1/admin/... (выставляется скриптом scripts/make_admin.py)
+    is_platform_admin: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     description: Mapped[str | None] = mapped_column(
@@ -236,6 +239,12 @@ class Organization(Base):
     booking_horizon_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     plan: Mapped[str] = mapped_column(String(20), default="basic", server_default="basic", nullable=False)
+    # подписка (статус считается по датам, см. domain/subscription.py)
+    trial_ends_at: Mapped[datetime] = mapped_column(DateTime, default=default_trial_end, nullable=False)
+    paid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    is_free: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    is_blocked: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    billing_note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")
@@ -366,4 +375,32 @@ class AppointmentToken(Base):
     language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     # на какой адрес клиент оставил запись: туда же уйдёт напоминание
     email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class Payment(Base):
+    """Платёж за подписку (или бесплатный период, method=grant). Журнал только дописывается.
+
+    Хранится и после удаления организации (это учёт), поэтому организация нужна только как ссылка
+    (ON DELETE SET NULL) и дополнительно запоминается название.
+    """
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    organization_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)  # в минимальных единицах валюты (центы, копейки)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    method: Mapped[str] = mapped_column(String(20), nullable=False)  # cash / bank_transfer / card / grant
+    plan: Mapped[str] = mapped_column(String(20), nullable=False)
+    months: Mapped[int] = mapped_column(Integer, nullable=False)
+    paid_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

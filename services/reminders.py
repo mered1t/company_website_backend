@@ -27,6 +27,7 @@ from services.email_service import send_booking_reminder_email
 from domain.enums import AppointmentStatus
 from services.booking_tokens import create_token, hash_token
 from core.time_utils import utc_now
+from services.billing import access_filter
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
             )
             .where(
                 models.Organization.timezone == tz_name,
+                access_filter(),  # закрытым организациям напоминания не шлём
                 models.Appointment.status == AppointmentStatus.scheduled,
                 models.Appointment.deleted_at.is_(None),
                 models.Appointment.start_time > org_now,

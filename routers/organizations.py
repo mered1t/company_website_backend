@@ -5,7 +5,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from auth.auth import OwnerMembership, verify_password_async
+from auth.auth import AnyStatusMembership, OwnerMembership, OwnerMembershipAnyStatus, verify_password_async
+from schemas.billing import SubscriptionInfo
 from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
@@ -168,11 +169,19 @@ async def list_my_organizations(
             booking_horizon_days=org.booking_horizon_days,
             currency=org.currency,
             plan=org.plan,
+            subscription=SubscriptionInfo.from_org(org),
             role=role.value,
             master_id=master_id,
         )
         for org, role, master_id in rows
     ]
+
+
+@router.get("/{organization_id}/subscription", response_model=SubscriptionInfo)
+async def get_subscription_info(organization_id: int, membership: AnyStatusMembership):
+    """Состояние подписки организации (триал, оплата, льготный период). Работает и у закрытой организации,
+    чтобы фронтенд мог показать экран «оплатите»."""
+    return SubscriptionInfo.from_org(membership.organization)
 
 
 
@@ -454,7 +463,7 @@ async def export_organization_data(
     organization_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: OwnerMembership,
+    membership: OwnerMembershipAnyStatus,
 ):
     """Скачать все данные организации одним JSON-файлом (переносимость данных, GDPR). Только владелец."""
     data = await build_export(db, organization_id)
@@ -487,7 +496,7 @@ async def delete_organization(
     payload: OrganizationDeleteRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-    membership: OwnerMembership,
+    membership: OwnerMembershipAnyStatus,
 ):
     """Безвозвратно удалить организацию со всеми данными (клиенты, записи, мастера, услуги, участники).
     Нужны пароль владельца и название организации. Аккаунты пользователей остаются."""

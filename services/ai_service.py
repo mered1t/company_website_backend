@@ -16,7 +16,7 @@ from services import analytics_service as svc
 import models
 from services.common import get_org_now
 from core.config import settings
-from domain.plans import plan_includes_ai
+from domain.subscription import get_subscription
 from core.time_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -239,7 +239,7 @@ async def get_usage(db: AsyncSession, org_id: int) -> dict:
     org = await db.get(models.Organization, org_id)
     return {
         "plan": org.plan,
-        "ai_enabled": plan_includes_ai(org.plan),
+        "ai_enabled": get_subscription(org).ai_enabled,
         "used_this_month": await usage_this_month(db, org_id),
         "monthly_limit": settings.ai_monthly_limit,
     }
@@ -271,7 +271,7 @@ async def generate_report(
     R = models.AiReport
 
     org = await db.get(models.Organization, org_id)
-    if not plan_includes_ai(org.plan):
+    if not get_subscription(org).ai_enabled:  # на пробном периоде ИИ доступен, дальше только на тарифе pro
         raise HTTPException(status_code=403, detail="AI analytics is available on the Pro plan")
 
     if date_from > date_to:

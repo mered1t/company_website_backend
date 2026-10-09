@@ -11,6 +11,7 @@ import re
 from domain.currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
 from domain.enums import AppointmentStatus
+from schemas.billing import SubscriptionInfo
 
 
 def _validate_timezone(value: str | None) -> str | None:
@@ -462,9 +463,11 @@ class PublicOrganizationInfo(BaseModel):
     currency: str
     timezone: str
     booking_horizon_days: int
+    booking_enabled: bool = True  # false, если у салона закончилась подписка: записываться нельзя
 
 
 class OrganizationWithRole(OrganizationPublic):
+    subscription: SubscriptionInfo
     role: str
     master_id: int | None = None
 
