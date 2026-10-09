@@ -63,6 +63,7 @@ async def delete_user_account(db: AsyncSession, user: models.User) -> None:
     await db.execute(delete(models.Invitation).where(func.lower(models.Invitation.email) == email.lower()))
     for token_model in (models.RefreshToken, models.PasswordResetToken, models.EmailVerificationToken):
         await db.execute(delete(token_model).where(token_model.user_id == user_id))
+    await db.execute(delete(models.Notification).where(models.Notification.user_id == user_id))
     await db.execute(delete(models.Membership).where(models.Membership.user_id == user_id))
     # ActivityLog, ClientComment и AiReport ссылаются на users с ON DELETE SET NULL: автор просто становится пустым
     await db.execute(delete(models.User).where(models.User.id == user_id))

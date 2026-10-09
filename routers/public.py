@@ -31,6 +31,8 @@ from core.rate_limiter import limiter
 from services.email_service import safe_send, send_booking_confirmation_email
 from services.booking_tokens import create_token
 from services.billing import ensure_booking_enabled
+from services.notifications import notify_booking
+from domain.notifications import NotificationType
 from domain.subscription import get_subscription
 
 
@@ -177,6 +179,8 @@ async def public_create_booking(
         action="created", entity_type="appointment", entity_id=new_appointment.id,
         details=f"Public booking by {booking.client_full_name} ({booking.client_phone})",
     )
+
+    await notify_booking(db, new_appointment, NotificationType.booking_created)  # колокольчик в CRM
 
     # письмо со ссылкой «отменить / перенести»: если клиент оставил email (сейчас или раньше)
     confirmation = None

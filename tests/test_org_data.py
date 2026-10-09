@@ -15,7 +15,7 @@ PASSWORD = "Passw0rd!"  # пароль владельцев в тестовых 
 ORG_TABLES = {
     "organizations", "memberships", "invitations", "services", "masters", "master_services", "working_hours",
     "time_off", "working_hours_exceptions", "clients", "client_comments", "appointments", "appointment_tokens",
-    "activity_logs", "ai_reports",
+    "activity_logs", "ai_reports", "notifications",
 }
 GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments"}
 
@@ -65,6 +65,9 @@ async def _populate(db, org, tag):
                            entity_id=client.id, details=f"{tag}-activity"),
         models.AiReport(organization_id=org.org_id, user_id=owner_id, period_start=datetime(2030, 1, 1),
                         period_end=datetime(2030, 1, 31), language="en", status="done", content=f"{tag}-report"),
+        models.Notification(organization_id=org.org_id, user_id=owner_id, type="booking_created",
+                            appointment_id=appointment.id, client_id=client.id, service_name=f"{tag}-service",
+                            master_name=f"{tag}-master", start_time=start),
     ])
     await db.commit()
     return SimpleNamespace(owner_id=owner_id, service_id=service.id, master_id=master.id, client_id=client.id,
@@ -97,6 +100,7 @@ async def _counts(db, org_id):
         "appointments": select(func.count()).select_from(models.Appointment).where(models.Appointment.organization_id == org_id),
         "activity_logs": select(func.count()).select_from(models.ActivityLog).where(models.ActivityLog.organization_id == org_id),
         "ai_reports": select(func.count()).select_from(models.AiReport).where(models.AiReport.organization_id == org_id),
+        "notifications": select(func.count()).select_from(models.Notification).where(models.Notification.organization_id == org_id),
         "appointment_tokens": select(func.count()).select_from(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
         "client_comments": select(func.count()).select_from(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         "master_services": select(func.count()).select_from(models.MasterService).where(models.MasterService.master_id.in_(master_ids)),

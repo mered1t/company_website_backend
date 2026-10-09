@@ -18,7 +18,8 @@ from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleR
 from services.booking import check_slot_free, get_free_slots, persist
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
-from services.salon_notifications import dispatch_all, prepare_salon_cancelled, prepare_salon_rescheduled
+from services.notifications import notify_booking
+from domain.notifications import NotificationType
 from services.billing import ensure_booking_enabled
 
 router = APIRouter()
@@ -109,11 +110,10 @@ async def cancel_booking(
         details="Cancelled by the client via the link from the email",
     )
     notification = await prepare_cancelled_email(db, appointment, by_salon=False)
-    salon_notifications = await prepare_salon_cancelled(db, appointment)  # письма владельцу, админам и мастеру
+    await notify_booking(db, appointment, NotificationType.booking_cancelled)  # колокольчик в CRM
     info = _info(appointment, org_now)  # собираем до commit: после него объекты могут устареть
     await db.commit()
     dispatch(background_tasks, notification)
-    dispatch_all(background_tasks, salon_notifications)
     return info
 
 
@@ -150,9 +150,8 @@ async def reschedule_booking(
     )
     await persist(db, commit=False)  # защита от двойной записи превращается в 400
     notification = await prepare_changed_email(db, appointment, old_start=old_start, by_salon=False)
-    salon_notifications = await prepare_salon_rescheduled(db, appointment, old_start=old_start)
+    await notify_booking(db, appointment, NotificationType.booking_rescheduled, old_start=old_start)  # колокольчик в CRM
     info = _info(appointment, org_now)
     await db.commit()
     dispatch(background_tasks, notification)
-    dispatch_all(background_tasks, salon_notifications)
     return info

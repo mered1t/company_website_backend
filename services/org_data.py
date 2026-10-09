@@ -162,6 +162,7 @@ async def delete_organization_data(db: AsyncSession, organization_id: int) -> No
     master_ids = select(models.Master.id).where(models.Master.organization_id == organization_id)
 
     statements = [
+        delete(models.Notification).where(models.Notification.organization_id == organization_id),
         delete(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
         delete(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         delete(models.Appointment).where(models.Appointment.organization_id == organization_id),

@@ -10,3 +10,4 @@ from models.models import (User, Client, Service,
                            AppointmentToken)
 
 from models.models import Payment  # noqa: F401  (таблица платежей)
+from models.notification import Notification  # noqa: F401  (уведомления в CRM)

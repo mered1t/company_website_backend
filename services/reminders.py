@@ -29,6 +29,7 @@ from services.booking_tokens import create_token, hash_token
 from core.time_utils import utc_now
 from services.billing import access_filter
 from services.billing_notices import send_due_billing_notices
+from services.notifications import delete_old_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -197,4 +198,14 @@ async def reminder_loop(session_factory, interval_seconds: int, initial_delay: f
             raise
         except Exception:
             logger.exception("Billing notices check failed")
+        # уведомления в CRM хранятся 30 дней
+        try:
+            async with session_factory() as db:
+                removed = await delete_old_notifications(db)
+            if removed:
+                logger.info("Removed %s old notification(s)", removed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Notifications cleanup failed")
         await asyncio.sleep(interval_seconds)
