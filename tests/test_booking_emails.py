@@ -79,8 +79,9 @@ async def test_client_cancel_sends_email_in_the_booking_language(api, db, org_a,
     r = await api.post(f"{PUBLIC}/booking/{booked.token}/cancel")
     assert r.status_code == 200, r.text
 
-    assert len(sent_emails) == 1
-    mail = sent_emails[0]
+    client_mails = [m for m in sent_emails if m["to"] == "bob@example.com"]  # салон получает своё письмо отдельно
+    assert len(client_mails) == 1
+    mail = client_mails[0]
     assert mail["to"] == "bob@example.com"
     assert mail["subject"] == "Twoja wizyta w Shop ownera została odwołana"
     assert "Haircut" in mail["html"] and "Master Ann" in mail["html"] and _fmt(start) in mail["html"]
@@ -93,7 +94,7 @@ async def test_second_cancel_click_sends_nothing(api, db, org_a, sent_emails):
     booked = await _booked(db, org_a, service, master, await _when(db, org_a))
     assert (await api.post(f"{PUBLIC}/booking/{booked.token}/cancel")).status_code == 200
     assert (await api.post(f"{PUBLIC}/booking/{booked.token}/cancel")).status_code == 200
-    assert len(sent_emails) == 1
+    assert len([m for m in sent_emails if m["to"] == "bob@example.com"]) == 1
 
 
 async def test_too_late_cancel_sends_nothing(api, db, org_a, sent_emails):
@@ -110,7 +111,7 @@ async def test_cancel_without_any_email_still_works(api, db, org_a, sent_emails)
     booked = await _booked(db, org_a, service, master, await _when(db, org_a), email=None, client_email=None)
     r = await api.post(f"{PUBLIC}/booking/{booked.token}/cancel")
     assert r.status_code == 200
-    assert sent_emails == []
+    assert not [m for m in sent_emails if m["to"] == "bob@example.com"]  # клиенту писать некуда
 
 
 # ------------------------------------------------------------------ клиент переносит по ссылке
@@ -124,8 +125,9 @@ async def test_client_reschedule_sends_new_time_and_a_working_link(api, db, org_
     r = await api.post(f"{PUBLIC}/booking/{booked.token}/reschedule", json={"start_time": new_start.isoformat()})
     assert r.status_code == 200, r.text
 
-    assert len(sent_emails) == 1
-    mail = sent_emails[0]
+    client_mails = [m for m in sent_emails if m["to"] == "bob@example.com"]  # салон получает своё письмо отдельно
+    assert len(client_mails) == 1
+    mail = client_mails[0]
     assert mail["to"] == "bob@example.com"
     assert mail["subject"] == "Twoja wizyta w Shop ownera została zmieniona"
     assert _fmt(new_start) in mail["html"] and _fmt(start) in mail["html"]
