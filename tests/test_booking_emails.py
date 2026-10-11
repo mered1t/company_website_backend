@@ -51,7 +51,7 @@ async def _booked(db, org, service, master, start, *, email="bob@example.com", c
     appointment = models.Appointment(
         organization_id=org.org_id, client_id=client.id, service_id=service.id, master_id=master.id,
         start_time=start, end_time=start + timedelta(minutes=service.duration_minutes),
-        status=status, price=service.price, currency="EUR",
+        status=status, price=service.price, currency="EUR", booked_online=with_token,
     )
     db.add(appointment)
     await db.flush()
@@ -259,15 +259,10 @@ async def test_staff_reschedule_into_a_taken_slot_sends_nothing(api, db, org_a, 
 
 # ------------------------------------------------------------------ кому и на каком языке
 
-async def test_staff_created_appointment_uses_the_client_email_and_the_owner_language(api, db, org_a, sent_emails):
+async def test_staff_created_appointment_uses_the_client_email_and_the_salon_language(api, db, org_a, sent_emails):
     service, master = await _setup(db, org_a)
-    owner_id = (await db.execute(
-        select(models.Membership.user_id).where(
-            models.Membership.organization_id == org_a.org_id, models.Membership.role == models.MembershipRole.owner,
-        ),
-    )).scalar_one()
-    owner = await db.get(models.User, owner_id)
-    owner.language = "pl"
+    org = await db.get(models.Organization, org_a.org_id)
+    org.client_email_language = "pl"  # настройка салона «язык писем клиентам»
     await db.commit()
     booked = await _booked(db, org_a, service, master, await _when(db, org_a),
                            with_token=False, client_email="walkin@example.com")

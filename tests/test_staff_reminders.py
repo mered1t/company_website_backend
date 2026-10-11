@@ -284,3 +284,43 @@ async def test_online_booking_without_its_link_is_skipped_safely(db, org_a, sent
     await db.commit()
     assert await send_due_reminders(db) == 0
     assert sent_emails == []
+
+
+# ------------------------------------------------------------------ письма об отмене и переносе по записям из CRM
+async def test_cancel_and_change_emails_use_the_salon_language_even_after_a_reminder(api, db, org_a, sent_emails):
+    """Напоминание создаёт у записи из CRM ссылку; письма об отмене всё равно берут язык и адрес из настроек и карточки."""
+    service, master = await _seed(db, org_a)
+    await _set(db, org_a, client_email_language="uk")
+    appointment_id, start = await _staff_booking(db, org_a, service, master, hours_ahead=10)
+    assert await send_due_reminders(db) == 1
+    assert sent_emails[-1]["subject"] == "Нагадування про запис у Shop ownera"
+
+    await _set(db, org_a, client_email_language="pl")
+    client = await db.get(models.Client, (await db.get(models.Appointment, appointment_id)).client_id)
+    client.email = "new.address@example.com"
+    await db.commit()
+
+    r = await api.patch(f"{org_a.base}/appointments/{appointment_id}", headers=org_a.headers,
+                        json={"status": "cancelled"})
+    assert r.status_code == 200, r.text
+    assert sent_emails[-1]["to"] == "new.address@example.com"
+    assert sent_emails[-1]["subject"] == "Twoja wizyta w Shop ownera została odwołana"
+
+
+async def test_client_cancel_by_the_reminder_link_uses_the_salon_language(api, db, org_a, sent_emails):
+    service, master = await _seed(db, org_a)
+    await _set(db, org_a, client_email_language="pl")
+    await _staff_booking(db, org_a, service, master, hours_ahead=10)
+    assert await send_due_reminders(db) == 1
+    token = re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", sent_emails[-1]["html"]).group(1)
+    assert (await api.post(f"{SLUG_BASE}/booking/{token}/cancel")).status_code == 200
+    assert sent_emails[-1]["subject"] == "Twoja wizyta w Shop ownera została odwołana"
+
+
+async def test_crm_booking_without_email_gets_no_cancel_email(api, db, org_a, sent_emails):
+    service, master = await _seed(db, org_a)
+    appointment_id, _ = await _staff_booking(db, org_a, service, master, hours_ahead=30, client_email=None)
+    r = await api.patch(f"{org_a.base}/appointments/{appointment_id}", headers=org_a.headers,
+                        json={"status": "cancelled"})
+    assert r.status_code == 200
+    assert sent_emails == []

@@ -1,7 +1,8 @@
 """Письма клиенту, когда запись отменили или изменили: сам клиент по ссылке или сотрудник салона.
 
-Кому писать: на email, который клиент оставил при записи (первый токен записи), а если такого нет, на email из
-карточки клиента. Язык: язык записи; у записей без токена (их создал сотрудник) язык владельца организации.
+Кому писать: при онлайн-записи на email, который клиент оставил при записи (первый токен записи), а если такого нет,
+на email из карточки клиента; язык тот, что клиент выбрал при записи. Запись из CRM: email из карточки клиента,
+язык из настройки салона client_email_language (как у напоминаний).
 Письма уходят в фоне после коммита; сбой отправки пишется в лог и запрос не ломает.
 """
 from dataclasses import dataclass
@@ -44,22 +45,16 @@ async def _recipient(db: AsyncSession, appointment: models.Appointment) -> tuple
         .limit(1),
     )).scalars().first()
 
-    email = (first_token.email if first_token else None) or (client.email if client else None)
-    if not email:
-        return None
-    if first_token:
-        return email, first_token.language
+    client_email = client.email if client else None
+    if appointment.booked_online and first_token:
+        email = first_token.email or client_email
+        return (email, first_token.language) if email else None
 
-    owner_language = (await db.execute(
-        select(models.User.language)
-        .join(models.Membership, models.Membership.user_id == models.User.id)
-        .where(
-            models.Membership.organization_id == appointment.organization_id,
-            models.Membership.role == models.MembershipRole.owner,
-        )
-        .limit(1),
-    )).scalars().first()
-    return email, owner_language or DEFAULT_LANGUAGE
+    # запись из CRM: токен у неё мог появиться от напоминания, но адрес и язык берём из карточки и настроек салона
+    if not client_email:
+        return None
+    organization = await db.get(models.Organization, appointment.organization_id)
+    return client_email, organization.client_email_language or DEFAULT_LANGUAGE
 
 
 async def _names(db: AsyncSession, appointment: models.Appointment) -> tuple[str, str, str]:
