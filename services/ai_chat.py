@@ -222,33 +222,64 @@ class ModelTurn:
     output_tokens: int = 0
 
 
+def _responses_tools() -> list[dict]:
+    """Те же инструменты в формате Responses API (там описание функции лежит на верхнем уровне)."""
+    return [{"type": "function", **tool["function"]} for tool in TOOLS]
+
+
+def _responses_input(messages: list[dict]) -> tuple[str, list[dict]]:
+    """Переводит переписку из нашего формата (как у Chat Completions) в instructions + input для Responses API."""
+    instructions, items = "", []
+    for m in messages:
+        if m["role"] == "system":
+            instructions = m["content"]
+        elif m["role"] == "tool":
+            items.append({"type": "function_call_output", "call_id": m["tool_call_id"], "output": m["content"]})
+        else:
+            if m.get("content"):
+                items.append({"role": m["role"], "content": m["content"]})
+            for call in m.get("tool_calls") or []:
+                items.append({
+                    "type": "function_call",
+                    "call_id": call["id"],
+                    "name": call["function"]["name"],
+                    "arguments": call["function"]["arguments"],
+                })
+    return instructions, items
+
+
 async def call_chat_model(messages: list[dict], allow_tools: bool) -> ModelTurn:
-    """Единственное место, где чат ходит в OpenAI (в тестах подменяется)."""
+    """Единственное место, где чат ходит в OpenAI (в тестах подменяется).
+
+    Используем Responses API, как и ИИ-отчёт: ключу OpenAI достаточно одного разрешения (Responses).
+    """
     if not settings.openai_api_key or not settings.openai_model:
         raise HTTPException(status_code=503, detail="AI service is not configured")
 
     from openai import AsyncOpenAI  # импорт здесь, чтобы остальной код не зависел от пакета
 
+    instructions, items = _responses_input(messages)
     client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=60.0, max_retries=1)
-    response = await client.chat.completions.create(
+    response = await client.responses.create(
         model=settings.openai_model,
-        messages=messages,
-        tools=TOOLS,
+        instructions=instructions,
+        input=items,
+        tools=_responses_tools(),
         tool_choice="auto" if allow_tools else "none",
-        max_completion_tokens=MAX_OUTPUT_TOKENS,
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+        store=False,  # не хранить переписку на стороне OpenAI
     )
-    message = response.choices[0].message
     calls = [
-        {"id": c.id, "name": c.function.name, "arguments": c.function.arguments}
-        for c in (message.tool_calls or [])
-        if c.type == "function"
+        {"id": item.call_id, "name": item.name, "arguments": item.arguments}
+        for item in (response.output or [])
+        if getattr(item, "type", None) == "function_call"
     ]
-    usage = response.usage
+    usage = getattr(response, "usage", None)
     return ModelTurn(
-        content=message.content,
+        content=response.output_text or None,
         tool_calls=calls,
-        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        input_tokens=getattr(usage, "input_tokens", 0) or 0,
+        output_tokens=getattr(usage, "output_tokens", 0) or 0,
     )
 
 

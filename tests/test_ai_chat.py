@@ -504,48 +504,120 @@ async def test_deleting_the_account_keeps_the_counter(api, db, org_a, model):
 
 
 # ------------------------------------------------------------------ адаптер OpenAI
-async def test_openai_adapter_sends_tools_and_reads_tool_calls(monkeypatch):
-    from openai.types.chat import ChatCompletion
+def _fake_openai(monkeypatch, responses):
+    """Подменяет клиент OpenAI: запоминает запросы и по очереди отдаёт готовые ответы."""
     import openai
 
-    sent = {}
-    completion = ChatCompletion.model_validate({
-        "id": "c1", "object": "chat.completion", "created": 0, "model": "m",
-        "choices": [{
-            "index": 0, "finish_reason": "tool_calls",
-            "message": {"role": "assistant", "content": None, "tool_calls": [{
-                "id": "call_1", "type": "function",
-                "function": {"name": "get_period_stats", "arguments": "{\"date_from\": \"2020-01-01\", \"date_to\": \"2020-01-31\"}"},
-            }]},
-        }],
-        "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
-    })
+    sent = {"requests": []}
 
     class FakeClient:
         def __init__(self, **kwargs):
             sent["client"] = kwargs
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+            self.responses = SimpleNamespace(create=self.create)
 
         async def create(self, **kwargs):
-            sent["request"] = kwargs
-            return completion
+            sent["requests"].append(kwargs)
+            return responses.pop(0)
 
     monkeypatch.setattr(openai, "AsyncOpenAI", FakeClient)
     monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     monkeypatch.setattr(settings, "openai_model", "test-model")
+    return sent
 
-    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "q"}]
+
+_RESPONSE_BASE = {"id": "r1", "object": "response", "created_at": 0, "model": "m",
+                  "parallel_tool_calls": True, "tool_choice": "auto", "tools": []}
+
+
+async def test_openai_adapter_uses_responses_api_and_reads_tool_calls(monkeypatch):
+    from openai.types.responses import Response
+
+    with_call = Response.model_validate({**_RESPONSE_BASE, "output": [
+        {"type": "reasoning", "id": "rs_1", "summary": []},
+        {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "get_period_stats",
+         "arguments": "{\"date_from\": \"2020-01-01\", \"date_to\": \"2020-01-31\"}", "status": "completed"},
+    ]})
+    with_text = Response.model_validate({**_RESPONSE_BASE, "output": [
+        {"type": "message", "id": "m1", "role": "assistant", "status": "completed",
+         "content": [{"type": "output_text", "text": "Hello", "annotations": []}]},
+    ]})
+    sent = _fake_openai(monkeypatch, [with_call, with_text])
+
+    messages = [{"role": "system", "content": "rules"}, {"role": "user", "content": "q"}]
     turn = await ai_chat.call_chat_model(messages, allow_tools=True)
     assert turn.tool_calls == [{"id": "call_1", "name": "get_period_stats",
                                 "arguments": "{\"date_from\": \"2020-01-01\", \"date_to\": \"2020-01-31\"}"}]
-    assert (turn.content, turn.input_tokens, turn.output_tokens) == (None, 11, 7)
-    request = sent["request"]
-    assert request["model"] == "test-model" and request["messages"] == messages
-    assert request["tool_choice"] == "auto" and request["tools"] == ai_chat.TOOLS
+    assert turn.content is None and (turn.input_tokens, turn.output_tokens) == (0, 0)
+    request = sent["requests"][0]
+    assert request["model"] == "test-model" and request["store"] is False
+    assert request["instructions"] == "rules" and request["input"] == [{"role": "user", "content": "q"}]
+    assert request["tool_choice"] == "auto"
+    assert [t["name"] for t in request["tools"]] == ["get_period_stats", "get_upcoming_bookings"]
+    assert all(t["type"] == "function" and t["strict"] is True and "parameters" in t for t in request["tools"])
     assert sent["client"]["api_key"] == "sk-test"
 
-    await ai_chat.call_chat_model(messages, allow_tools=False)
-    assert sent["request"]["tool_choice"] == "none"
+    turn = await ai_chat.call_chat_model(messages, allow_tools=False)
+    assert turn.content == "Hello" and turn.tool_calls == []
+    assert sent["requests"][1]["tool_choice"] == "none"
+
+
+async def test_openai_adapter_reads_token_usage(monkeypatch):
+    response = SimpleNamespace(output=[], output_text="ok", usage=SimpleNamespace(input_tokens=11, output_tokens=7))
+    _fake_openai(monkeypatch, [response])
+    turn = await ai_chat.call_chat_model([{"role": "user", "content": "q"}], allow_tools=True)
+    assert (turn.content, turn.input_tokens, turn.output_tokens) == ("ok", 11, 7)
+
+
+def test_history_with_tool_calls_is_converted_for_the_responses_api():
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "q2"},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "call_1", "type": "function", "function": {"name": "get_period_stats", "arguments": "{}"}},
+            {"id": "call_2", "type": "function", "function": {"name": "get_upcoming_bookings", "arguments": "{}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "{\"a\": 1}"},
+        {"role": "tool", "tool_call_id": "call_2", "content": "{\"b\": 2}"},
+    ]
+    instructions, items = ai_chat._responses_input(messages)
+    assert instructions == "rules"
+    assert items == [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "q2"},
+        {"type": "function_call", "call_id": "call_1", "name": "get_period_stats", "arguments": "{}"},
+        {"type": "function_call", "call_id": "call_2", "name": "get_upcoming_bookings", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "call_1", "output": "{\"a\": 1}"},
+        {"type": "function_call_output", "call_id": "call_2", "output": "{\"b\": 2}"},
+    ]
+
+
+async def test_full_tool_round_trip_through_the_adapter(api, db, org_a, monkeypatch):
+    """Вся цепочка через адаптер: модель просит данные, получает их и отвечает."""
+    from openai.types.responses import Response
+
+    await _make_pro(db, org_a)
+    await _seed_past(db, org_a)
+    first = Response.model_validate({**_RESPONSE_BASE, "output": [
+        {"type": "function_call", "id": "fc_1", "call_id": "call_9", "name": "get_period_stats",
+         "arguments": "{\"date_from\": \"2020-01-01\", \"date_to\": \"2020-01-31\"}", "status": "completed"},
+    ]})
+    second = Response.model_validate({**_RESPONSE_BASE, "output": [
+        {"type": "message", "id": "m1", "role": "assistant", "status": "completed",
+         "content": [{"type": "output_text", "text": "Revenue was 35 EUR.", "annotations": []}]},
+    ]})
+    sent = _fake_openai(monkeypatch, [first, second])
+    r = await api.post(_url(org_a), json=QUESTION, headers=org_a.headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["reply"] == "Revenue was 35 EUR."
+    follow_up = sent["requests"][1]["input"]
+    assert follow_up[-2] == {"type": "function_call", "call_id": "call_9", "name": "get_period_stats",
+                             "arguments": "{\"date_from\": \"2020-01-01\", \"date_to\": \"2020-01-31\"}"}
+    assert follow_up[-1]["type"] == "function_call_output" and follow_up[-1]["call_id"] == "call_9"
+    assert json.loads(follow_up[-1]["output"])["revenue"]["total"] == 35.0
+    assert "Anna Secret" not in json.dumps(sent["requests"], ensure_ascii=False)
 
 
 def test_tool_schemas_are_strict_and_have_no_organization_argument():
