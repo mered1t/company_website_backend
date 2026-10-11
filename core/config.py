@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     # ИИ-аналитика (модель и ключ задаются в переменных окружения)
     openai_api_key: str | None = None
     openai_model: str | None = None
-    ai_monthly_limit: int = 30
+    ai_monthly_limit: int = 4          # ИИ-отчётов в месяц на салон: хватает на понедельные или помесячные
+    ai_chat_monthly_limit: int = 30    # вопросов ИИ-чату в месяц на салон (счётчик отдельный от отчётов)
 
     # за сколько часов до начала клиент ещё может сам отменить или перенести запись
     booking_change_cutoff_hours: int = 2

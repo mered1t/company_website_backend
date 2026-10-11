@@ -174,6 +174,7 @@ async def delete_organization_data(db: AsyncSession, organization_id: int) -> No
         delete(models.Invitation).where(models.Invitation.organization_id == organization_id),
         delete(models.ActivityLog).where(models.ActivityLog.organization_id == organization_id),
         delete(models.AiReport).where(models.AiReport.organization_id == organization_id),
+        delete(models.AiChatMessage).where(models.AiChatMessage.organization_id == organization_id),
         delete(models.Client).where(models.Client.organization_id == organization_id),
         delete(models.Service).where(models.Service.organization_id == organization_id),
         delete(models.Master).where(models.Master.organization_id == organization_id),

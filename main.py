@@ -8,6 +8,7 @@ from db.database import AsyncSessionLocal, engine, get_db
 from services.reminders import reminder_loop
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public, admin
 from routers import notifications
+from routers import ai_chat
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -89,6 +90,8 @@ api_v1.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_v1.include_router(
     notifications.router, prefix="/organizations/{organization_id}/notifications", tags=["notifications"],
 )
+# ИИ-чат тоже только в /api/v1
+api_v1.include_router(ai_chat.router, prefix="/organizations/{organization_id}/ai-chat", tags=["ai-chat"])
 
 app.include_router(api_v1)
 # Старые пути /api/... временно работают, но скрыты из документации.
