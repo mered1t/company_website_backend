@@ -182,6 +182,8 @@ class Appointment(Base):
     # для какого времени начала уже отправлено напоминание. Если запись перенесли, значение перестаёт совпадать
     # с start_time, и напоминание уйдёт ещё раз, уже на новое время.
     reminded_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    # True: клиент записался сам через публичную страницу; False: запись создал салон в CRM
+    booked_online: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
 
     organization: Mapped["Organization"] = relationship(back_populates="appointments")
     client: Mapped["Client"] = relationship(back_populates="appointments")
@@ -248,6 +250,10 @@ class Organization(Base):
     # письма о конце подписки: какое отправлено последним и для какой даты конца доступа (см. services/billing_notices.py)
     billing_notice_stage: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
     billing_notice_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    # напоминания клиентам и по записям, созданным в CRM (у онлайн-записей напоминания есть всегда)
+    staff_booking_reminders: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
+    # язык писем клиентам по записям из CRM: при онлайн-записи клиент выбирает язык сам
+    client_email_language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")

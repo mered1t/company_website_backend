@@ -77,6 +77,8 @@ async def create_organization(
         slug=slug,
         timezone=org.timezone or "UTC",
         currency=org.currency or "EUR",
+        # клиентам по записям из CRM пишем на языке владельца; салон может поменять в настройках
+        client_email_language=current_user.language or "en",
     )
 
     db.add(new_org)
@@ -169,6 +171,8 @@ async def list_my_organizations(
             booking_horizon_days=org.booking_horizon_days,
             currency=org.currency,
             plan=org.plan,
+            staff_booking_reminders=org.staff_booking_reminders,
+            client_email_language=org.client_email_language,
             subscription=SubscriptionInfo.from_org(org),
             role=role.value,
             master_id=master_id,

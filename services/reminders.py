@@ -1,5 +1,9 @@
 """Напоминания о записи: за N часов до начала клиент получает письмо со ссылкой «отменить / перенести».
 
+Кому: клиентам, записавшимся онлайн (email и язык из записи), и клиентам, которых записал сам салон в CRM,
+если в карточке клиента есть email и у салона включена настройка staff_booking_reminders
+(язык таких писем: client_email_language салона).
+
 Как это работает:
   * берём записи со статусом scheduled, до начала которых осталось не больше reminder_hours_before часов
     (время считается по часовому поясу салона), у которых известен email клиента;
@@ -16,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfoNotFoundError
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -73,9 +77,11 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
 
         result = await db.execute(
             select(models.Appointment, models.AppointmentToken)
-            .join(first_token, first_token.c.appointment_id == models.Appointment.id)
-            .join(models.AppointmentToken, models.AppointmentToken.id == first_token.c.token_id)
+            # у записей из CRM до первого напоминания токена нет: для них token будет None
+            .outerjoin(first_token, first_token.c.appointment_id == models.Appointment.id)
+            .outerjoin(models.AppointmentToken, models.AppointmentToken.id == first_token.c.token_id)
             .join(models.Organization, models.Organization.id == models.Appointment.organization_id)
+            .join(models.Client, models.Client.id == models.Appointment.client_id)
             .options(
                 selectinload(models.Appointment.service),
                 selectinload(models.Appointment.master),
@@ -90,18 +96,38 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
                 models.Appointment.start_time > org_now,
                 models.Appointment.start_time <= org_now + window,
                 models.Appointment.reminded_start_time.is_distinct_from(models.Appointment.start_time),
+                or_(
+                    # онлайн-запись: email и язык клиент указал при записи
+                    and_(models.Appointment.booked_online.is_(True), first_token.c.token_id.is_not(None)),
+                    and_(  # запись из CRM: только если салон не отключил и есть куда писать
+                        models.Appointment.booked_online.is_(False),
+                        models.Organization.staff_booking_reminders.is_(True),
+                        models.Client.email.is_not(None),
+                        models.Client.email != "",
+                        models.Client.deleted_at.is_(None),
+                    ),
+                ),
             )
             .order_by(models.Appointment.start_time)
             .limit(BATCH_LIMIT),
         )
         for appointment, token in result.all():
-            booked_local = to_org_local(token.created_at, tz_name)
+            # запись из CRM: подтверждения не было, напоминание нужно всегда. Токен у неё может уже быть
+            # (от прошлого напоминания), но язык и адрес всё равно берём из настроек салона и карточки клиента
+            if not appointment.booked_online:
+                booked_inside_window = False
+                to_email = appointment.client.email
+                language = appointment.organization.client_email_language
+            else:
+                booked_inside_window = to_org_local(token.created_at, tz_name) > appointment.start_time - window
+                to_email = token.email or appointment.client.email
+                language = token.language
             candidates.append(_Candidate(
                 appointment_id=appointment.id,
                 start_time=appointment.start_time,
-                booked_inside_window=booked_local > appointment.start_time - window,
-                to_email=token.email or appointment.client.email,
-                language=token.language,
+                booked_inside_window=booked_inside_window,
+                to_email=to_email,
+                language=language,
                 organization_name=appointment.organization.name,
                 service_name=appointment.service.name,
                 master_name=appointment.master.full_name,

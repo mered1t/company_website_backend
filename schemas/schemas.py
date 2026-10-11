@@ -414,8 +414,11 @@ class OrganizationCreate(BaseModel):
 
 class OrganizationUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
-        {"name", "timezone", "booking_horizon_days", "slug", "currency"}
+        {"name", "timezone", "booking_horizon_days", "slug", "currency",
+         "staff_booking_reminders", "client_email_language"}
     )
+    staff_booking_reminders: bool | None = None  # напоминать клиентам о записях, созданных в CRM
+    client_email_language: Language | None = None  # язык этих напоминаний
 
     name: Name150 | None = None
     timezone: str | None = None
@@ -452,6 +455,8 @@ class OrganizationPublic(BaseModel):
     booking_horizon_days: int
     currency: str
     plan: str
+    staff_booking_reminders: bool = True
+    client_email_language: str = "en"
 
 
 

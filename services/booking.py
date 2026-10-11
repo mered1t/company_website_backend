@@ -105,6 +105,7 @@ async def create_appointment_record(
     start_time: datetime,
     end_time: datetime,
     notes: str | None = None,
+    booked_online: bool = False,
 ) -> models.Appointment:
     """Создаёт запись со снимком цены и валюты. Единственное место, где это делается."""
     currency = await get_org_currency(db, organization_id)
@@ -118,6 +119,7 @@ async def create_appointment_record(
         price=service.price,
         currency=currency,
         notes=notes,
+        booked_online=booked_online,
     )
     db.add(appointment)
     await persist(db, commit=False)

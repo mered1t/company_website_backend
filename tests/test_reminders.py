@@ -48,7 +48,7 @@ async def _booked(db, org, service, master, hours_ahead, *, email="bob@example.c
     appointment = models.Appointment(
         organization_id=org.org_id, client_id=client.id, service_id=service.id, master_id=master.id,
         start_time=start, end_time=start + timedelta(minutes=service.duration_minutes),
-        status=status, price=service.price, currency="EUR",
+        status=status, price=service.price, currency="EUR", booked_online=True,
     )
     db.add(appointment)
     await db.flush()

@@ -172,6 +172,7 @@ async def public_create_booking(
         start_time=start_time,
         end_time=end_time,
         notes=booking.notes,
+        booked_online=True,
     )
 
     await log_activity(
