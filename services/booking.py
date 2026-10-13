@@ -3,7 +3,7 @@
 Любая запись (админка, публичная страница) проходит через эти функции,
 чтобы правила не расходились.
 """
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -44,9 +44,14 @@ async def check_working_hours(db: AsyncSession, master_id: int, start_time: date
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Master does not work on this day")
 
-    start_str = start_time.strftime("%H:%M")
-    end_str = end_time.strftime("%H:%M")
-    if not any(start_str >= s and end_str <= e for s, e in intervals):
+    # Сравниваем полное время, а не строки "ЧЧ:ММ": иначе запись на 23:30 длиной час заканчивалась бы в "00:30",
+    # что как строка «меньше» "19:00", и проходила бы проверку. Запись должна начаться и закончиться в тот же день
+    # и целиком уместиться в один рабочий интервал (секунды тоже учитываются).
+    if end_time <= start_time or end_time.date() != start_time.date():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Appointment time is outside master's working hours")
+    start_t, end_t = start_time.time(), end_time.time()
+    if not any(time.fromisoformat(s) <= start_t and end_t <= time.fromisoformat(e) for s, e in intervals):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Appointment time is outside master's working hours")
 
