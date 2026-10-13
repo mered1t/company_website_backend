@@ -146,8 +146,9 @@ async def public_create_booking(
             action="created", entity_type="client", entity_id=client.id,
             details=f"Client created via public booking: {client.full_name}",
         )
-    elif client.email is None and booking.client_email is not None:
-        client.email = booking.client_email
+    # Существующую карточку из публичной формы НЕ меняем: номер телефона чужого клиента знает кто угодно,
+    # и иначе можно было бы подставить свой email и получать письма и ссылки «отменить/перенести» по его записям.
+    # Email из формы сохраняется только у этой записи (в её токене) и используется для писем по ней.
 
     active_count_result = await db.execute(
         select(models.Appointment).where(
