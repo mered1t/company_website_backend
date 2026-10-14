@@ -49,6 +49,38 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "fallback": "Nëse butoni nuk funksionon, kopjo lidhjen:",
         },
     },
+    "email_changed": {
+        "en": {
+            "subject": "Your account email address was changed",
+            "heading": "Email address changed",
+            "body": "The email address of your {app_name} account was just changed. From now on, sign-in and notifications go to:",
+            "footer": "If you did this yourself, no action is needed. If not, reply to this email right away: someone may have access to your account.",
+        },
+        "pl": {
+            "subject": "Adres e-mail Twojego konta został zmieniony",
+            "heading": "Adres e-mail został zmieniony",
+            "body": "Adres e-mail Twojego konta {app_name} został właśnie zmieniony. Od teraz logowanie i powiadomienia trafiają na:",
+            "footer": "Jeśli to Ty, nie musisz nic robić. Jeśli nie, od razu odpowiedz na tę wiadomość: ktoś może mieć dostęp do Twojego konta.",
+        },
+        "es": {
+            "subject": "Se ha cambiado el correo de tu cuenta",
+            "heading": "Correo electrónico cambiado",
+            "body": "Se acaba de cambiar el correo electrónico de tu cuenta de {app_name}. A partir de ahora, el acceso y las notificaciones irán a:",
+            "footer": "Si lo has hecho tú, no tienes que hacer nada. Si no, responde a este correo enseguida: alguien podría tener acceso a tu cuenta.",
+        },
+        "uk": {
+            "subject": "Пошту вашого акаунта змінено",
+            "heading": "Електронну пошту змінено",
+            "body": "Щойно змінили електронну пошту вашого акаунта {app_name}. Відтепер вхід і сповіщення йдуть на адресу:",
+            "footer": "Якщо це зробили ви, нічого робити не потрібно. Якщо ні, одразу дайте відповідь на цей лист: хтось може мати доступ до вашого акаунта.",
+        },
+        "sq": {
+            "subject": "Email-i i llogarisë tënde u ndryshua",
+            "heading": "Email-i u ndryshua",
+            "body": "Email-i i llogarisë tënde në {app_name} sapo u ndryshua. Tani e tutje hyrja dhe njoftimet shkojnë te:",
+            "footer": "Nëse e bëre ti, nuk duhet të bësh asgjë. Nëse jo, përgjigju menjëherë këtij email-i: dikush mund të ketë qasje në llogarinë tënde.",
+        },
+    },
     "password_reset": {
         "en": {
             "subject": "Reset your password",

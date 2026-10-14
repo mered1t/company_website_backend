@@ -59,7 +59,8 @@ async def test_changing_email_resets_verification(api, db):
     headers, user_id = await register_and_login(api, "mallory", "mallory@example.com")
     await verify_in_db(db, "mallory@example.com")
 
-    r = await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com"})
+    r = await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com",
+                                                                         "current_password": "Passw0rd!"})
     assert r.status_code == 200, r.text
     assert r.json()["email_verified"] is False
 
@@ -69,7 +70,8 @@ async def test_changed_email_cannot_be_used_to_accept_invitation(api, db, org_a)
     await verify_in_db(db, "mallory@example.com")
     inv_id = await make_invitation(db, org_a.org_id, "ivan@example.com")
 
-    await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com"})
+    await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com",
+                                                                         "current_password": "Passw0rd!"})
 
     r = await api.post(f"/api/v1/invitations/{inv_id}/accept", headers=headers)
     assert r.status_code == 403, r.text
@@ -85,8 +87,9 @@ async def test_old_verification_token_does_not_verify_new_email(api, sent_emails
     old_token = token_from(sent_emails[-1])
 
     sent_emails.clear()
-    await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com"})
-    new_token = token_from(sent_emails[-1])
+    await api.patch(f"/api/v1/users/{user_id}", headers=headers, json={"email": "ivan@example.com",
+                                                                         "current_password": "Passw0rd!"})
+    new_token = token_from(next(m for m in sent_emails if m["to"] == "ivan@example.com"))
     assert new_token != old_token
 
     # старый токен после смены email не подтверждает ничего

@@ -1,0 +1,14 @@
+{% extends "base_email.html" %}
+
+{% block content %}
+<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
+<p style="color:#374151; font-size:14px; line-height:1.6;">
+  {{ t.body }}
+</p>
+<p style="color:#111827; font-size:15px; font-weight:bold; margin: 16px 0;">
+  {{ new_email }}
+</p>
+<p style="color:#9ca3af; font-size:12px; line-height:1.6;">
+  {{ t.footer }}
+</p>
+{% endblock %}

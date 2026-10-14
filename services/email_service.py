@@ -93,6 +93,15 @@ def send_verification_email(to_email: str, token: str, language: str | None = DE
     )
 
 
+def send_email_changed_email(to_email: str, new_email: str, language: str | None = DEFAULT_LANGUAGE) -> None:
+    """Уведомление на СТАРЫЙ адрес: email аккаунта поменяли (на случай, если это сделал не владелец)."""
+    _send(
+        to_email,
+        email_subject("email_changed", language),
+        render_email("email_changed.html", language, new_email=new_email),
+    )
+
+
 def send_booking_confirmation_email(
     to_email: str,
     organization_name: str,

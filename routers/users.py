@@ -24,7 +24,8 @@ from schemas.schemas import (
     ResetPasswordRequest,
     RefreshRequest,
     VerifyEmailRequest,
-    ResendVerificationRequest, MAX_PASSWORD_LENGTH)
+    ResendVerificationRequest, MAX_PASSWORD_LENGTH,
+    ChangePasswordRequest)
 
 from core.rate_limiter import limiter
 from pydantic import BaseModel, Field
@@ -33,7 +34,9 @@ from services.account import OwnsOrganizationError, delete_user_account
 import secrets
 from datetime import timedelta
 from fastapi import BackgroundTasks
-from services.email_service import safe_send, send_password_reset_email, send_verification_email
+from services.email_service import (
+    safe_send, send_email_changed_email, send_password_reset_email, send_verification_email,
+)
 import logging
 from core.time_utils import utc_now
 
@@ -41,6 +44,33 @@ from core.time_utils import utc_now
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+REFRESH_TOKEN_DAYS = 30
+
+
+async def _issue_refresh_token(db: AsyncSession, user_id: int, expires_at=None) -> str:
+    """Новый refresh-токен (в базе только его хеш). Возвращает сам токен для клиента."""
+    value = create_refresh_token()
+    db.add(models.RefreshToken(
+        user_id=user_id,
+        token=hash_token(value),
+        expires_at=expires_at or utc_now() + timedelta(days=REFRESH_TOKEN_DAYS),
+    ))
+    return value
+
+
+async def _end_all_sessions(db: AsyncSession, user_id: int) -> None:
+    """Выйти со всех устройств: гасим все refresh-токены и все неиспользованные ссылки сброса пароля."""
+    await db.execute(
+        update(models.RefreshToken)
+        .where(models.RefreshToken.user_id == user_id, models.RefreshToken.revoked.is_(False))
+        .values(revoked=True),
+    )
+    await db.execute(
+        update(models.PasswordResetToken)
+        .where(models.PasswordResetToken.user_id == user_id, models.PasswordResetToken.used.is_(False))
+        .values(used=True),
+    )
 
 
 @router.post("", response_model=UserPrivate, status_code=status.HTTP_201_CREATED)
@@ -146,14 +176,7 @@ async def login(
         )
 
     access_token = create_access_token(data={"sub": str(user.id)})
-
-    refresh_token_value = create_refresh_token()
-    refresh_token = models.RefreshToken(
-        user_id=user.id,
-        token=hash_token(refresh_token_value),
-        expires_at=utc_now() + timedelta(days=30),
-    )
-    db.add(refresh_token)
+    refresh_token_value = await _issue_refresh_token(db, user.id)
     await db.commit()
 
     return Token(access_token=access_token, refresh_token=refresh_token_value)
@@ -199,21 +222,46 @@ async def reset_password(
     payload: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(
-        select(models.PasswordResetToken).where(models.PasswordResetToken.token == hash_token(payload.token)),
+    # «Занимаем» ссылку одним UPDATE: два одновременных запроса с одной ссылкой не пройдут оба
+    claimed = await db.execute(
+        update(models.PasswordResetToken)
+        .where(
+            models.PasswordResetToken.token == hash_token(payload.token),
+            models.PasswordResetToken.used.is_(False),
+            models.PasswordResetToken.expires_at >= utc_now(),
+        )
+        .values(used=True)
+        .returning(models.PasswordResetToken.user_id),
     )
-    reset_token = result.scalars().first()
-
-    if not reset_token or reset_token.used or reset_token.expires_at < utc_now():
+    user_id = claimed.scalar_one_or_none()
+    if user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
-    user_result = await db.execute(select(models.User).where(models.User.id == reset_token.user_id))
-    user = user_result.scalars().first()
-
+    user = await db.get(models.User, user_id)
     user.password_hash = await hash_password_async(payload.new_password)
-    reset_token.used = True
-
+    # Кто бы ни был залогинен со старым паролем, его выкидывает со всех устройств; другие ссылки сброса тоже гаснут
+    await _end_all_sessions(db, user_id)
     await db.commit()
+
+
+@router.post("/me/password", response_model=Token)
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    payload: ChangePasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    """Сменить пароль, зная текущий. Все остальные входы завершаются; в ответе новые токены для этого устройства."""
+    if not await verify_password_async(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
+
+    user = await db.get(models.User, current_user.id)
+    user.password_hash = await hash_password_async(payload.new_password)
+    await _end_all_sessions(db, user.id)
+    refresh_token_value = await _issue_refresh_token(db, user.id)
+    await db.commit()
+    return Token(access_token=create_access_token(data={"sub": str(user.id)}), refresh_token=refresh_token_value)
 
 
 @router.patch("/{user_id}", response_model=UserPrivate)
@@ -244,13 +292,22 @@ async def update_user(
         user.language = user_update.language
 
     new_verification_token = None
+    old_email = None
     if user_update.email is not None and user_update.email.lower() != user.email.lower():
+        # без пароля сменить email нельзя: иначе с украденным токеном входа можно забрать аккаунт навсегда
+        if not user_update.current_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Current password is required to change email")
+        if not await verify_password_async(user_update.current_password, user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
+
         existing = await db.execute(
             select(models.User).where(func.lower(models.User.email) == user_update.email.lower()),
         )
         if existing.scalars().first():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
+        old_email = user.email
         user.email = user_update.email.lower()
         user.email_verified = False
 
@@ -279,6 +336,13 @@ async def update_user(
             send_verification_email,
             log=("Failed to send verification email after email change",),
             to_email=user.email, token=new_verification_token, language=user.language,
+        )
+    if old_email:
+        background_tasks.add_task(
+            safe_send,
+            send_email_changed_email,
+            log=("Failed to send email-changed notice",),
+            to_email=old_email, new_email=user.email, language=user.language,
         )
 
     return user
@@ -320,16 +384,25 @@ async def refresh_access_token(
     payload: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(
-        select(models.RefreshToken).where(models.RefreshToken.token == hash_token(payload.refresh_token)),
+    # Ротация: старый токен гасится одним UPDATE и взамен выдаётся новый с тем же сроком окончания
+    # (вход действует не дольше 30 дней с момента логина). Повторно старый токен не сработает.
+    rotated = await db.execute(
+        update(models.RefreshToken)
+        .where(
+            models.RefreshToken.token == hash_token(payload.refresh_token),
+            models.RefreshToken.revoked.is_(False),
+            models.RefreshToken.expires_at >= utc_now(),
+        )
+        .values(revoked=True)
+        .returning(models.RefreshToken.user_id, models.RefreshToken.expires_at),
     )
-    refresh_token = result.scalars().first()
-
-    if not refresh_token or refresh_token.revoked or refresh_token.expires_at < utc_now():
+    row = rotated.first()
+    if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
-    access_token = create_access_token(data={"sub": str(refresh_token.user_id)})
-    return Token(access_token=access_token, refresh_token=payload.refresh_token)
+    new_refresh = await _issue_refresh_token(db, row.user_id, expires_at=row.expires_at)
+    await db.commit()
+    return Token(access_token=create_access_token(data={"sub": str(row.user_id)}), refresh_token=new_refresh)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

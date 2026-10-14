@@ -127,6 +127,8 @@ class UserUpdate(PatchModel):
     username: str | None = Field(default=None, min_length=1, max_length=50)
     email: EmailStr | None = Field(default=None, max_length=120)
     language: Language | None = None
+    # нужен только для смены email: украденного токена входа не должно хватать, чтобы забрать аккаунт
+    current_password: str | None = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
 
 
 class Token(BaseModel):
@@ -521,6 +523,19 @@ class ResetPasswordRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_password_strength(self) -> "ResetPasswordRequest":
+        if not any(c.isupper() for c in self.new_password):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in self.new_password):
+            raise ValueError("Password must contain at least one digit")
+        return self
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
+
+    @model_validator(mode="after")
+    def check_password_strength(self) -> "ChangePasswordRequest":
         if not any(c.isupper() for c in self.new_password):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.isdigit() for c in self.new_password):
