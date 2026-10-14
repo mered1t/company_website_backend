@@ -521,6 +521,8 @@ async def get_client_appointments(
     )
     if status_filter is not None:
         query = query.where(models.Appointment.status == status_filter)
+    if membership.role == models.MembershipRole.master:  # мастер видит историю клиента только у себя
+        query = query.where(models.Appointment.master_id == membership.master_id)
 
     query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc())
     result = await db.execute(query)

@@ -36,6 +36,21 @@ def _check_can_modify(membership: models.Membership, appointment: models.Appoint
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only modify your own appointments")
 
 
+def _is_master(membership: models.Membership) -> bool:
+    return membership.role == models.MembershipRole.master
+
+
+def _visible_to(query, membership: models.Membership):
+    """Мастер видит только свои записи (без цен и клиентов коллег); владелец и админ видят все."""
+    if _is_master(membership):
+        query = query.where(models.Appointment.master_id == membership.master_id)
+    return query
+
+
+# поля, от которых зависят деньги и история визита: мастер правит их у закрытой записи только в день визита
+_CLOSED_FIELDS = {"status", "service_id", "start_time", "client_id"}
+
+
 @router.post("", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     appointment: AppointmentCreate,
@@ -87,16 +102,11 @@ async def list_appointments(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    result = await db.execute(
-        select(models.Appointment)
-        .where(
-            models.Appointment.organization_id == membership.organization_id,
-            models.Appointment.deleted_at.is_(None),
-        )
-        .order_by(models.Appointment.id)
-        .offset(skip)
-        .limit(limit),
+    query = select(models.Appointment).where(
+        models.Appointment.organization_id == membership.organization_id,
+        models.Appointment.deleted_at.is_(None),
     )
+    result = await db.execute(_visible_to(query, membership).order_by(models.Appointment.id).offset(skip).limit(limit))
     return result.scalars().all()
 
 
@@ -110,6 +120,8 @@ async def get_calendar(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ):
+    # время в базе — местное время салона без часового пояса; дата с поясом («...+02:00») ломала сравнение (500)
+    date_from, date_to = date_from.replace(tzinfo=None), date_to.replace(tzinfo=None)
     query = (
         select(models.Appointment)
         .options(
@@ -126,6 +138,7 @@ async def get_calendar(
     )
     if master_id is not None:
         query = query.where(models.Appointment.master_id == master_id)
+    query = _visible_to(query, membership)
 
     query = query.order_by(models.Appointment.start_time).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -138,14 +151,12 @@ async def get_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
 ):
-    result = await db.execute(
-        select(models.Appointment).where(
-            models.Appointment.id == appointment_id,
-            models.Appointment.organization_id == membership.organization_id,
-            models.Appointment.deleted_at.is_(None),
-        ),
+    query = select(models.Appointment).where(
+        models.Appointment.id == appointment_id,
+        models.Appointment.organization_id == membership.organization_id,
+        models.Appointment.deleted_at.is_(None),
     )
-    appointment = result.scalars().first()
+    appointment = (await db.execute(_visible_to(query, membership))).scalars().first()
     if not appointment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
     return appointment
@@ -167,6 +178,21 @@ async def update_appointment(
     update_data = appointment_update.model_dump(exclude_unset=True)
     old_status, old_start = appointment.status, appointment.start_time
     old_master_id, old_service_id = appointment.master_id, appointment.service_id
+
+    with db.no_autoflush:
+        now_local = await get_org_now(db, membership.organization_id)
+    # Закрытую запись (выполнена, отменена, не пришёл) мастер может поправить только в день визита,
+    # дальше — владелец или админ. Иначе мастер мог бы задним числом «отменить» оплаченный визит и выручка исчезла бы.
+    if (
+        _is_master(membership)
+        and old_status != AppointmentStatus.scheduled
+        and old_start.date() < now_local.date()
+        and _CLOSED_FIELDS & update_data.keys()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the owner or an admin can change a closed appointment after its day",
+        )
 
     # Проверяем, что переданные id принадлежат ЭТОЙ организации
     if "client_id" in update_data:
@@ -206,6 +232,18 @@ async def update_appointment(
 
     if appointment.start_time.tzinfo is not None:
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
+
+    # «Выполнена» мастер ставит только начавшейся записи; владелец и админ могут закрыть день заранее
+    if (
+        _is_master(membership)
+        and appointment.status == AppointmentStatus.completed
+        and ("status" in update_data or "start_time" in update_data)
+        and appointment.start_time > now_local
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An appointment can be marked completed only after it has started",
+        )
 
     # «Не пришёл» можно поставить, когда запись уже началась: во время приёма или после него
     if appointment.status == AppointmentStatus.no_show and ("status" in update_data or "start_time" in update_data):
