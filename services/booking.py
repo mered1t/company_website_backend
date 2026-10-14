@@ -3,10 +3,12 @@
 Любая запись (админка, публичная страница) проходит через эти функции,
 чтобы правила не расходились.
 """
+import zlib
 from datetime import datetime, date, time, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -132,6 +134,42 @@ async def create_appointment_record(
 
 
 SLOT_STEP = timedelta(minutes=15)
+OFF_GRID = "Please choose one of the offered times"
+
+
+def to_salon_time(value: datetime, tz_name: str) -> datetime:
+    """Время записи по часам салона (в базе оно без часового пояса).
+
+    Если клиент прислал время с поясом (например, «...Z» из toISOString), переводим его в пояс салона,
+    а не просто отбрасываем пояс: иначе запись сдвигалась бы на разницу во времени.
+    """
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(ZoneInfo(tz_name)).replace(tzinfo=None)
+
+
+async def check_on_slot_grid(db: AsyncSession, master_id: int, start_time: datetime) -> None:
+    """Клиент записывается только на время из сетки: каждые 15 минут от начала рабочего интервала, без секунд.
+
+    Иначе запись на 10:07 «рвёт» день мастера, и из списка свободного времени пропадают удобные слоты.
+    Вызывать после check_slot_free (там уже проверено, что время внутри рабочего интервала).
+    """
+    if start_time.second or start_time.microsecond:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=OFF_GRID)
+    for start_str, _ in await get_available_intervals(db, master_id, start_time.date()):
+        interval_start = datetime.combine(start_time.date(), time.fromisoformat(start_str))
+        if interval_start <= start_time and (start_time - interval_start) % SLOT_STEP == timedelta(0):
+            return
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=OFF_GRID)
+
+
+async def lock_client_phone(db: AsyncSession, organization_id: int, phone: str) -> None:
+    """Публичные записи с одним телефоном в одном салоне идут строго по очереди (до конца транзакции).
+
+    Без этого одновременные запросы обходили лимит «3 будущие записи» и падали с 500, создавая клиента дважды.
+    """
+    key = zlib.crc32(phone.encode()) - 2**31  # в диапазон int4
+    await db.execute(select(func.pg_advisory_xact_lock(cast(organization_id, Integer), cast(key, Integer))))
 
 
 async def load_service_and_master(db: AsyncSession, organization_id: int, service_id: int, master_id: int):

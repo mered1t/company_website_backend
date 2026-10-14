@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,7 +24,7 @@ from services.booking import (
 )
 
 from services.booking import (
-    check_slot_free, create_appointment_record,
+    check_on_slot_grid, check_slot_free, create_appointment_record, lock_client_phone, to_salon_time,
 )
 
 from core.rate_limiter import limiter
@@ -110,17 +110,21 @@ async def public_create_booking(
 
     org_now = await get_org_now(db, org.id)
 
-    await check_booking_horizon(db, org.id, booking.start_time.date())
+    start_time = to_salon_time(booking.start_time, org.timezone)
+    await check_booking_horizon(db, org.id, start_time.date())
 
     service, master = await load_service_and_master(db, org.id, booking.service_id, booking.master_id)
 
-    start_time = booking.start_time.replace(tzinfo=None)
     if start_time <= org_now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot book a time in the past")
 
     end_time = start_time + timedelta(minutes=service.duration_minutes)
 
     await check_slot_free(db, booking.master_id, start_time, end_time)
+    await check_on_slot_grid(db, booking.master_id, start_time)
+
+    # дальше проверка «не больше 3 будущих записей» и создание клиента: строго по одному запросу на телефон
+    await lock_client_phone(db, org.id, booking.client_phone)
 
     client_result = await db.execute(
         select(models.Client).where(
@@ -213,8 +217,8 @@ async def get_available_dates(
     slug: str,
     master_id: int,
     service_id: int,
-    month: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM"),  # иначе «2026-13» давало 500
 ):
     org = await get_organization_by_slug(slug, db)
     service, _ = await load_service_and_master(db, org.id, service_id, master_id)

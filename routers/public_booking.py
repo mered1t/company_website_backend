@@ -15,7 +15,7 @@ from db.database import get_db
 from domain.enums import AppointmentStatus
 from core.rate_limiter import limiter
 from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleRequest
-from services.booking import check_slot_free, get_free_slots, persist
+from services.booking import check_on_slot_grid, check_slot_free, get_free_slots, persist, to_salon_time
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
 from services.notifications import notify_booking
@@ -132,13 +132,14 @@ async def reschedule_booking(
     ensure_booking_enabled(appointment.organization)
     _ensure_modifiable(appointment, org_now)
 
-    new_start = body.start_time.replace(tzinfo=None)
+    new_start = to_salon_time(body.start_time, appointment.organization.timezone)
     if new_start <= org_now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot book a time in the past")
     await check_booking_horizon(db, appointment.organization_id, new_start.date())
 
     new_end = new_start + (appointment.end_time - appointment.start_time)
     await check_slot_free(db, appointment.master_id, new_start, new_end, exclude_id=appointment.id)
+    await check_on_slot_grid(db, appointment.master_id, new_start)
 
     old_start = appointment.start_time
     appointment.start_time = new_start
