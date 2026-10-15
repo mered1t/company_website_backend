@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:4200"
     app_name: str = "Твоё название CRM"
 
+    # Swagger (/docs, /redoc, /openapi.json). В production открывается только по логину и паролю (HTTP Basic);
+    # если пароль не задан, документация в production выключена. Локально и в тестах открыта.
+    docs_username: str = "admin"
+    docs_password: SecretStr | None = None
+
     # ИИ-аналитика (модель и ключ задаются в переменных окружения)
     openai_api_key: str | None = None
     openai_model: str | None = None

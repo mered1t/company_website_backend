@@ -1,7 +1,11 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import APIRouter, FastAPI, Depends, HTTPException
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 import asyncio
+import secrets
 from contextlib import asynccontextmanager, suppress
 
 from db.database import AsyncSessionLocal, engine, get_db
@@ -62,7 +66,8 @@ if settings.sentry_dsn:
     )
 
 
-app = FastAPI(lifespan=lifespan)
+# Стандартные /docs, /redoc и /openapi.json выключены: ниже они подключаются заново, с паролем в production
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -110,6 +115,35 @@ app.add_middleware(
 )
 # Добавляется последним, поэтому обрабатывает запрос первым: номер есть даже у ответов CORS
 app.add_middleware(RequestIdMiddleware)
+
+
+def _docs_access(credentials: Annotated[HTTPBasicCredentials | None, Depends(HTTPBasic(auto_error=False))]) -> None:
+    """Swagger в production только по логину и паролю из DOCS_USERNAME / DOCS_PASSWORD."""
+    if settings.environment != "production":
+        return
+    if settings.docs_password is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    ok = credentials is not None and (
+        secrets.compare_digest(credentials.username.encode(), settings.docs_username.encode())
+        & secrets.compare_digest(credentials.password.encode(), settings.docs_password.get_secret_value().encode())
+    )
+    if not ok:
+        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
+
+
+@app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(_docs_access)])
+async def openapi_schema():
+    return JSONResponse(app.openapi())
+
+
+@app.get("/docs", include_in_schema=False, dependencies=[Depends(_docs_access)])
+async def swagger_ui():
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
+
+
+@app.get("/redoc", include_in_schema=False, dependencies=[Depends(_docs_access)])
+async def redoc_ui():
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
 
 
 @app.get("/health", tags=["health"])
