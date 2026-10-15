@@ -308,6 +308,21 @@ async def restore_appointment(
 ):
     appointment = await restore_entity(db, models.Appointment, appointment_id, membership.organization_id, "Appointment")
 
+    # запись нельзя вернуть к удалённому мастеру, услуге или клиенту: сначала восстановите их
+    with db.no_autoflush:
+        for model, field, label in (
+            (models.Master, appointment.master_id, "master"),
+            (models.Service, appointment.service_id, "service"),
+            (models.Client, appointment.client_id, "client"),
+        ):
+            related = await db.get(model, field)
+            if related is None or related.deleted_at is not None:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot restore: the {label} of this appointment is deleted. Restore the {label} first",
+                )
+
     await log_activity(
         db, membership.organization_id, current_user.id,
         action="restored", entity_type="appointment", entity_id=appointment_id,

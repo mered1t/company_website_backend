@@ -348,6 +348,24 @@ async def restore_client(
 
     client = await restore_entity(db, models.Client, client_id, membership.organization_id, "Client")
 
+    # пока клиент был удалён, его номер мог занять новый клиент: два активных клиента с одним номером нельзя
+    # (раньше здесь падала ошибка базы и ответ был 500)
+    with db.no_autoflush:
+        taken = (await db.execute(
+            select(models.Client.id).where(
+                models.Client.organization_id == membership.organization_id,
+                models.Client.phone == client.phone,
+                models.Client.deleted_at.is_(None),
+                models.Client.id != client.id,
+            ),
+        )).first()
+    if taken:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot restore: another client already uses this phone number",
+        )
+
     await log_activity(
         db, membership.organization_id, current_user.id,
         action="restored", entity_type="client", entity_id=client_id,
