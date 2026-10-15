@@ -280,6 +280,11 @@ class MasterCreate(MasterBase):
     service_ids: list[int] = Field(default=[], max_length=200)
 
 
+class MasterServicesUpdate(BaseModel):
+    """Полный список услуг мастера (заменяет прежний). Пустой список = мастер делает все услуги салона."""
+    service_ids: list[int] = Field(max_length=200)
+
+
 class MasterUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name"})
     full_name: Name150 | None = None

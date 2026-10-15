@@ -105,7 +105,15 @@ class Master(Base):
     working_hours: Mapped[list["WorkingHours"]] = relationship(back_populates="master", cascade="all, delete-orphan")
     time_off: Mapped[list["TimeOff"]] = relationship(back_populates="master", cascade="all, delete-orphan")
     working_hours_exceptions: Mapped[list["WorkingHoursException"]] = relationship(back_populates="master", cascade="all, delete-orphan")
-    services: Mapped[list["Service"]] = relationship(secondary="master_services")
+    # только неудалённые услуги: удалённая услуга не видна на публичной странице и не «привязывает» мастера.
+    # Связи пишутся строками MasterService (PUT /masters/{id}/services), поэтому связь только для чтения.
+    services: Mapped[list["Service"]] = relationship(
+        secondary="master_services",
+        primaryjoin="Master.id == MasterService.master_id",
+        secondaryjoin="and_(MasterService.service_id == Service.id, Service.deleted_at.is_(None))",
+        order_by="Service.id",
+        viewonly=True,
+    )
 
 
 class MasterService(Base):

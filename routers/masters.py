@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (MasterCreate,
                              MasterPublic,
+                             MasterServicesUpdate,
                              MasterUpdate,
                              WorkingHoursBase,
                              TimeOffCreate,
@@ -155,6 +156,46 @@ async def update_master(
     await db.commit()
     await db.refresh(master, attribute_names=["working_hours"])
     return master
+
+
+@router.put("/{master_id}/services", response_model=MasterPublic)
+async def replace_master_services(
+    master_id: int,
+    payload: MasterServicesUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: ManagerMembership,
+):
+    """Задать услуги мастера целиком. Все услуги должны быть активными услугами этого салона, иначе 400."""
+    master = await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+
+    wanted = list(dict.fromkeys(payload.service_ids))  # без повторов, порядок не важен
+    found = set((await db.execute(
+        select(models.Service.id).where(
+            models.Service.id.in_(wanted),
+            models.Service.organization_id == membership.organization_id,
+            models.Service.deleted_at.is_(None),
+        ),
+    )).scalars().all()) if wanted else set()
+    missing = [i for i in wanted if i not in found]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown services: {missing}")
+
+    await db.execute(delete(models.MasterService).where(models.MasterService.master_id == master.id))
+    db.add_all([models.MasterService(master_id=master.id, service_id=i) for i in wanted])
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="master", entity_id=master_id,
+        details=f"Updated services for {master.full_name}",
+    )
+    await db.commit()
+    result = await db.execute(
+        select(models.Master)
+        .options(selectinload(models.Master.working_hours), selectinload(models.Master.services))
+        .where(models.Master.id == master.id),
+    )
+    return result.scalars().one()
 
 
 @router.put("/{master_id}/working-hours", response_model=MasterPublic)

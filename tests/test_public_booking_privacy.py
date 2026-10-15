@@ -77,7 +77,8 @@ async def test_stranger_does_not_replace_an_existing_email(api, db, org_a, sent_
 
 async def test_the_strangers_own_booking_still_mails_the_address_from_the_form(api, db, org_a, sent_emails):
     service, master = await _seed(db, org_a)
-    await _crm_client_with_visit(db, org_a, service, master, email="ivan@example.com", hours_ahead=60)
+    await _crm_client_with_visit(db, org_a, service, master, email="ivan@example.com",
+                                 hours_ahead=24 * 6)  # не пересекается с записью через 3 дня в любое время суток
     sent_emails.clear()
     appointment_id = await _book_as_stranger(api, org_a, service, master, await _day(db, org_a))
     assert [m["to"] for m in sent_emails] == ["attacker@example.com"]  # подтверждение своей записи
