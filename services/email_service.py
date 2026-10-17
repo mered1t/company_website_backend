@@ -111,7 +111,7 @@ def send_booking_confirmation_email(
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
 ) -> None:
-    manage_url = _frontend_url(f"/booking/manage?token={manage_token}")
+    manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
         to_email,
         email_subject("booking_confirmation", language, organization_name=organization_name),
@@ -136,7 +136,7 @@ def send_booking_reminder_email(
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
 ) -> None:
-    manage_url = _frontend_url(f"/booking/manage?token={manage_token}")
+    manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
         to_email,
         email_subject("booking_reminder", language, organization_name=organization_name),
@@ -187,7 +187,7 @@ def send_booking_changed_email(
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
 ) -> None:
-    manage_url = _frontend_url(f"/booking/manage?token={manage_token}")
+    manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
         to_email,
         email_subject("booking_changed", language, organization_name=organization_name),

@@ -62,7 +62,7 @@ async def _booked(db, org, service, master, start, *, email="bob@example.com", c
 
 
 def _manage_token(mail) -> str:
-    return re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", mail["html"]).group(1)
+    return re.search(r"/booking/([A-Za-z0-9_-]+)", mail["html"]).group(1)
 
 
 def _fmt(dt) -> str:

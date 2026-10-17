@@ -1,11 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
+from core.time_utils import utc_now
 from db.database import get_db
 from schemas.schemas import (ServicePublic,
                              MasterPublicInfo,
@@ -37,6 +38,9 @@ from domain.subscription import get_subscription
 
 
 router = APIRouter()
+
+PHONE_DAILY_LIMIT = 5        # онлайн-записей с одного номера в салон за сутки
+MAX_DATES_RANGE_DAYS = 31    # самый длинный период для available-dates с from/to
 
 
 async def get_organization_by_slug(slug: str, db: AsyncSession, *, require_booking: bool = True) -> models.Organization:
@@ -106,6 +110,9 @@ async def public_create_booking(
     background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if booking.website:  # скрытое поле-ловушка заполняют только боты
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request")
+
     org = await get_organization_by_slug(slug, db)
 
     org_now = await get_org_now(db, org.id)
@@ -150,6 +157,20 @@ async def public_create_booking(
             action="created", entity_type="client", entity_id=client.id,
             details=f"Client created via public booking: {client.full_name}",
         )
+    else:
+        # защита от спама с одного номера: не больше PHONE_DAILY_LIMIT онлайн-записей за сутки (включая отменённые)
+        recent = (await db.execute(
+            select(func.count(models.Appointment.id)).where(
+                models.Appointment.client_id == client.id,
+                models.Appointment.booked_online.is_(True),
+                models.Appointment.created_at >= utc_now() - timedelta(days=1),
+            ),
+        )).scalar()
+        if recent >= PHONE_DAILY_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many online bookings from this phone number today. Please call the salon.",
+            )
     # Существующую карточку из публичной формы НЕ меняем: номер телефона чужого клиента знает кто угодно,
     # и иначе можно было бы подставить свой email и получать письма и ссылки «отменить/перенести» по его записям.
     # Email из формы сохраняется только у этой записи (в её токене) и используется для писем по ней.
@@ -218,17 +239,32 @@ async def get_available_dates(
     master_id: int,
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM"),  # иначе «2026-13» давало 500
+    month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM"),
+    date_from: date_type | None = Query(default=None, alias="from", description="Первый день (вместо month)"),
+    date_to: date_type | None = Query(default=None, alias="to", description="Последний день, не больше 31 дня"),
 ):
+    """Дни, в которые есть свободное время. Либо month=YYYY-MM, либо from и to (до 31 дня, например неделя
+    на стыке месяцев). В любом случае только от сегодня до сегодня + горизонт записи салона."""
+    if month is not None:
+        if date_from is not None or date_to is not None:
+            raise HTTPException(status_code=422, detail="Pass either month or from/to, not both")
+        year, month_num = map(int, month.split("-"))
+        first_day = date_type(year, month_num, 1)
+        if month_num == 12:
+            last_day = date_type(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = date_type(year, month_num + 1, 1) - timedelta(days=1)
+    elif date_from is not None and date_to is not None:
+        if date_to < date_from:
+            raise HTTPException(status_code=422, detail="'to' must not be earlier than 'from'")
+        if (date_to - date_from).days >= MAX_DATES_RANGE_DAYS:
+            raise HTTPException(status_code=422, detail=f"The range must not exceed {MAX_DATES_RANGE_DAYS} days")
+        first_day, last_day = date_from, date_to
+    else:
+        raise HTTPException(status_code=422, detail="Pass month=YYYY-MM or both from and to")
+
     org = await get_organization_by_slug(slug, db)
     service, _ = await load_service_and_master(db, org.id, service_id, master_id)
-
-    year, month_num = map(int, month.split("-"))
-    first_day = date_type(year, month_num, 1)
-    if month_num == 12:
-        last_day = date_type(year + 1, 1, 1) - timedelta(days=1)
-    else:
-        last_day = date_type(year, month_num + 1, 1) - timedelta(days=1)
 
     org_now = await get_org_now(db, org.id)
     today = org_now.date()

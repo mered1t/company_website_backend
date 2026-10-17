@@ -696,6 +696,8 @@ class PublicBookingRequest(BaseModel):
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
     language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
+    # Поле-ловушка для ботов: на странице оно скрыто, человек его не заполняет. Заполнено — запрос отклоняется.
+    website: str | None = Field(default=None, max_length=200)
 
 
 class TransferOwnershipRequest(BaseModel):

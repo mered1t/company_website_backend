@@ -66,7 +66,7 @@ async def test_staff_booking_gets_a_reminder_with_a_working_link(api, db, org_a,
     assert start.strftime("%d.%m.%Y %H:%M") in mail["html"]
     assert await _marker(db, appointment_id) == start
 
-    token = re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", mail["html"]).group(1)
+    token = re.search(r"/booking/([A-Za-z0-9_-]+)", mail["html"]).group(1)
     info = await api.get(f"{SLUG_BASE}/booking/{token}")
     assert info.status_code == 200 and info.json()["appointment_id"] == appointment_id
 
@@ -312,7 +312,7 @@ async def test_client_cancel_by_the_reminder_link_uses_the_salon_language(api, d
     await _set(db, org_a, client_email_language="pl")
     await _staff_booking(db, org_a, service, master, hours_ahead=10)
     assert await send_due_reminders(db) == 1
-    token = re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", sent_emails[-1]["html"]).group(1)
+    token = re.search(r"/booking/([A-Za-z0-9_-]+)", sent_emails[-1]["html"]).group(1)
     assert (await api.post(f"{SLUG_BASE}/booking/{token}/cancel")).status_code == 200
     assert sent_emails[-1]["subject"] == "Twoja wizyta w Shop ownera została odwołana"
 

@@ -80,7 +80,7 @@ async def test_booking_with_email_sends_confirmation_with_manage_link(api, db, o
     mail = sent_emails[0]
     assert mail["to"] == "bob@example.com"
     assert mail["subject"] == "Twoja wizyta została potwierdzona"
-    token = re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", mail["html"]).group(1)
+    token = re.search(r"/booking/([A-Za-z0-9_-]+)", mail["html"]).group(1)
 
     info = await api.get(f"{SLUG_BASE}/booking/{token}")
     assert info.status_code == 200
@@ -117,7 +117,7 @@ async def test_token_is_stored_only_as_hash(api, db, org_a, sent_emails):
     service, master = await _seed(db, org_a)
     start = await _day(db, org_a)
     await api.post(f"{SLUG_BASE}/{org_a.slug}/book", json=_book_body(service, master, start, client_email="bob@example.com"))
-    token = re.search(r"token=([A-Za-z0-9_-]+)", sent_emails[0]["html"]).group(1)
+    token = re.search(r"/booking/([A-Za-z0-9_-]+)", sent_emails[0]["html"]).group(1)
     stored = (await db.execute(select(models.AppointmentToken.token_hash))).scalars().all()
     assert stored and token not in stored
 

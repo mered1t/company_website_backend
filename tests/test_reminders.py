@@ -85,7 +85,7 @@ async def test_reminder_is_sent_with_working_manage_link(api, db, org_a, sent_em
     assert "Haircut" in mail["html"] and "Master Ann" in mail["html"]
     assert start.strftime("%d.%m.%Y %H:%M") in mail["html"]
 
-    token = re.search(r"/booking/manage\?token=([A-Za-z0-9_-]+)", mail["html"]).group(1)
+    token = re.search(r"/booking/([A-Za-z0-9_-]+)", mail["html"]).group(1)
     info = await api.get(f"{SLUG_BASE}/booking/{token}")  # ссылка из напоминания открывает эту же запись
     assert info.status_code == 200
     assert info.json()["appointment_id"] == appointment_id
