@@ -98,6 +98,8 @@ class Master(Base):
     full_name: Mapped[str] = mapped_column(String(150), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    title: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)  # должность, например «Барбер»
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)  # коротко о себе (публичная страница)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -262,6 +264,12 @@ class Organization(Base):
     staff_booking_reminders: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
     # язык писем клиентам по записям из CRM: при онлайн-записи клиент выбирает язык сам
     client_email_language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
+    # для публичной страницы записи (салон заполняет в настройках)
+    address: Mapped[str | None] = mapped_column(String(300), nullable=True, default=None)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)  # E.164
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    privacy_policy_url: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     clients: Mapped[list["Client"]] = relationship(back_populates="organization")

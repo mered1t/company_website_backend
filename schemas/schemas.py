@@ -268,10 +268,27 @@ class WorkingHoursPublic(WorkingHoursFields):
     id: int
 
 
+PHONE_PATTERN = r"^\+[1-9]\d{6,14}$"  # E.164
+
+
+def _validate_url(value: str | None) -> str | None:
+    """Ссылка для публичной страницы: только http(s), иначе в разметке мог бы оказаться javascript:..."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if not value.lower().startswith(("https://", "http://")) or any(c.isspace() for c in value):
+        raise ValueError("Must be a link starting with https://")
+    return value
+
+
 class MasterBase(BaseModel):
     full_name: Name150
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = None
+    title: str | None = Field(default=None, max_length=100)  # должность: «Барбер», «Колорист»
+    bio: str | None = Field(default=None, max_length=500)    # коротко о себе
 
 
 class MasterCreate(MasterBase):
@@ -290,6 +307,8 @@ class MasterUpdate(PatchModel):
     full_name: Name150 | None = None
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     photo: str | None = Field(default=None, max_length=255)
+    title: str | None = Field(default=None, max_length=100)
+    bio: str | None = Field(default=None, max_length=500)
 
 
 class MasterPublic(MasterBase):
@@ -309,6 +328,8 @@ class MasterPublicInfo(BaseModel):
     id: int
     full_name: str
     photo: str | None = None
+    title: str | None = None
+    bio: str | None = None
     working_hours: list[WorkingHoursPublic] = []
     services: list[ServicePublic] = []
 
@@ -427,6 +448,18 @@ class OrganizationUpdate(PatchModel):
     staff_booking_reminders: bool | None = None  # напоминать клиентам о записях, созданных в CRM
     client_email_language: Language | None = None  # язык этих напоминаний
 
+    # публичная страница записи; null очищает поле
+    address: str | None = Field(default=None, max_length=300)
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    logo_url: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=1000)
+    privacy_policy_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("logo_url", "privacy_policy_url")
+    @classmethod
+    def validate_links(cls, v):
+        return _validate_url(v)
+
     name: Name150 | None = None
     timezone: str | None = None
     booking_horizon_days: int | None = Field(default=None, ge=1, le=365)
@@ -464,7 +497,18 @@ class OrganizationPublic(BaseModel):
     plan: str
     staff_booking_reminders: bool = True
     client_email_language: str = "en"
+    address: str | None = None
+    phone: str | None = None
+    logo_url: str | None = None
+    description: str | None = None
+    privacy_policy_url: str | None = None
 
+
+
+class OpeningHours(BaseModel):
+    day_of_week: int  # 0 = понедельник
+    start_time: str
+    end_time: str
 
 
 class PublicOrganizationInfo(BaseModel):
@@ -476,6 +520,14 @@ class PublicOrganizationInfo(BaseModel):
     timezone: str
     booking_horizon_days: int
     booking_enabled: bool = True  # false, если у салона закончилась подписка: записываться нельзя
+    address: str | None = None
+    phone: str | None = None
+    logo_url: str | None = None
+    description: str | None = None
+    privacy_policy_url: str | None = None
+    # часы работы салона по дням недели: с самого раннего начала до самого позднего конца графиков мастеров
+    opening_hours: list[OpeningHours] = []
+    cancellation_hours: int = 0  # за сколько часов до начала клиент ещё может сам отменить или перенести запись
 
 
 class OrganizationWithRole(OrganizationPublic):

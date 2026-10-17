@@ -90,6 +90,11 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             "currency": org.currency,
             "booking_horizon_days": org.booking_horizon_days,
             "plan": org.plan,
+            "address": org.address,
+            "phone": org.phone,
+            "logo_url": org.logo_url,
+            "description": org.description,
+            "privacy_policy_url": org.privacy_policy_url,
             "created_at": org.created_at,
         },
         "members": [
@@ -110,6 +115,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         "masters": [
             {
                 "id": m.id, "full_name": m.full_name, "phone": m.phone, "photo": m.photo,
+                "title": m.title, "bio": m.bio,
                 "created_at": m.created_at, "deleted_at": m.deleted_at,
                 "service_ids": sorted(r.service_id for r in service_ids_by_master.get(m.id, [])),
                 "working_hours": [

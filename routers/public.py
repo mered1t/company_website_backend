@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
+from core.config import settings
 from core.time_utils import utc_now
 from db.database import get_db
 from schemas.schemas import (ServicePublic,
@@ -13,7 +14,7 @@ from schemas.schemas import (ServicePublic,
                              AvailableSlot,
                              PublicBookingRequest,
                              AppointmentPublic,
-                             PublicOrganizationInfo,)
+                             PublicOrganizationInfo, OpeningHours)
 
 
 from datetime import date as date_type, timedelta
@@ -317,7 +318,23 @@ async def public_organization_info(request: Request, slug: str, db: Annotated[As
     org = await get_organization_by_slug(slug, db, require_booking=False)
     info = PublicOrganizationInfo.model_validate(org)
     info.booking_enabled = get_subscription(org).booking_enabled  # страница записи сама покажет «запись недоступна»
+    info.cancellation_hours = settings.booking_change_cutoff_hours
+    info.opening_hours = await _opening_hours(db, org.id)
     return info
+
+
+async def _opening_hours(db: AsyncSession, organization_id: int) -> list[OpeningHours]:
+    """Часы работы салона: по каждому дню недели от самого раннего начала до самого позднего конца у мастеров."""
+    rows = (await db.execute(
+        select(models.WorkingHours.day_of_week, models.WorkingHours.start_time, models.WorkingHours.end_time)
+        .join(models.Master, models.Master.id == models.WorkingHours.master_id)
+        .where(models.Master.organization_id == organization_id, models.Master.deleted_at.is_(None)),
+    )).all()
+    days: dict[int, tuple[str, str]] = {}
+    for day, start, end in rows:
+        first, last = days.get(day, (start, end))
+        days[day] = (min(first, start), max(last, end))
+    return [OpeningHours(day_of_week=d, start_time=s, end_time=e) for d, (s, e) in sorted(days.items())]
 
 
 # управление записью по ссылке из письма (/public/booking/...)

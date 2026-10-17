@@ -44,6 +44,8 @@ async def create_master(
         full_name=master.full_name,
         phone=master.phone,
         photo=master.photo,
+        title=master.title,
+        bio=master.bio,
     )
     for wh in master.working_hours:
         new_master.working_hours.append(
