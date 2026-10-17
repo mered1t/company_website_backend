@@ -34,6 +34,7 @@ from core.time_utils import utc_now
 from services.billing import access_filter
 from services.billing_notices import send_due_billing_notices
 from services.notifications import delete_old_notifications
+from services.cleanup import CLEANUP_INTERVAL, purge_old_rows
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,7 @@ async def reminder_loop(session_factory, interval_seconds: int, initial_delay: f
     """Бесконечный цикл для фоновой задачи внутри веб-сервиса. Любая ошибка пишется в лог, цикл не останавливается."""
     logger.info("Booking reminders: background check every %s s", interval_seconds)
     await asyncio.sleep(initial_delay)  # дать приложению спокойно подняться
+    last_cleanup = None
     while True:
         try:
             async with session_factory() as db:
@@ -234,4 +236,16 @@ async def reminder_loop(session_factory, interval_seconds: int, initial_delay: f
             raise
         except Exception:
             logger.exception("Notifications cleanup failed")
+        # чистка устаревших строк (токены, старые приглашения, журнал) — раз в сутки
+        if last_cleanup is None or utc_now() - last_cleanup >= CLEANUP_INTERVAL:
+            last_cleanup = utc_now()
+            try:
+                async with session_factory() as db:
+                    removed = await purge_old_rows(db)
+                if any(removed.values()):
+                    logger.info("Database cleanup: %s", {k: v for k, v in removed.items() if v})
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Database cleanup failed")
         await asyncio.sleep(interval_seconds)

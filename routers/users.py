@@ -421,6 +421,19 @@ async def logout(
         await db.commit()
 
 
+@router.post("/me/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
+async def logout_all_devices(
+    request: Request,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Выйти со всех устройств, включая это: все refresh-токены гасятся. Уже выданный access-токен доживает свой срок
+    (до 30 минут), поэтому фронтенд сразу забывает оба токена и отправляет на страницу входа."""
+    await _end_all_sessions(db, current_user.id)
+    await db.commit()
+
+
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_email(
     payload: VerifyEmailRequest,

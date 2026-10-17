@@ -42,4 +42,7 @@ class Settings(BaseSettings):
     reminders_in_app: bool = False                 # True: проверка идёт внутри веб-сервиса (REMINDERS_IN_APP=1)
     reminder_check_interval_seconds: int = 900     # как часто проверять (15 минут)
 
+    # чистка базы (раз в сутки, в том же фоновом цикле): журнал действий старше стольких дней удаляется; 0 — хранить всё
+    activity_log_retention_days: int = 365
+
 settings = Settings() #type: ignore[call-arg] # Loaded from env file
