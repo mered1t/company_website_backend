@@ -691,7 +691,7 @@ class PublicBookingRequest(BaseModel):
     client_full_name: Name150
     client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     client_email: EmailStr | None = Field(default=None, max_length=120)
-    master_id: int
+    master_id: int | None = None  # не указан — «любой мастер»: салон сам назначит свободного мастера
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)

@@ -17,11 +17,11 @@ from schemas.schemas import (ServicePublic,
 
 
 from datetime import date as date_type, timedelta
-from services.common import log_activity, check_booking_horizon, get_org_now
+from services.common import log_activity, check_booking_horizon, get_org_now, get_owned_active
 from domain.enums import AppointmentStatus
 
 from services.booking import (
-    load_service_and_master, get_free_slots,
+    load_service_and_master, get_free_slots, master_load, masters_for_service,
 )
 
 from services.booking import (
@@ -39,6 +39,7 @@ from domain.subscription import get_subscription
 
 router = APIRouter()
 
+NO_FREE_MASTER = "No master is available at this time. Please choose another time"
 PHONE_DAILY_LIMIT = 5        # онлайн-записей с одного номера в салон за сутки
 MAX_DATES_RANGE_DAYS = 31    # самый длинный период для available-dates с from/to
 
@@ -86,18 +87,25 @@ async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSe
 async def get_available_slots(
     request: Request,
     slug: str,
-    master_id: int,
     service_id: int,
     date: date_type,
     db: Annotated[AsyncSession, Depends(get_db)],
+    master_id: int | None = None,
 ):
+    """Свободное время на день. Без master_id — «любой мастер»: общее время всех мастеров, которые делают услугу."""
     org = await get_organization_by_slug(slug, db)
     org_now = await get_org_now(db, org.id)
     await check_booking_horizon(db, org.id, date)
 
-    service, _ = await load_service_and_master(db, org.id, service_id, master_id)
-
-    slots = await get_free_slots(db, master_id, service.duration_minutes, date, org_now)
+    if master_id is not None:
+        service, _ = await load_service_and_master(db, org.id, service_id, master_id)
+        slots = await get_free_slots(db, master_id, service.duration_minutes, date, org_now)
+    else:
+        service = await get_owned_active(db, models.Service, service_id, org.id, "Service")
+        merged: set[tuple] = set()
+        for master in await masters_for_service(db, org.id, service_id):
+            merged.update(await get_free_slots(db, master.id, service.duration_minutes, date, org_now))
+        slots = sorted(merged)
     return [AvailableSlot(start_time=s, end_time=e) for s, e in slots]
 
 
@@ -120,15 +128,29 @@ async def public_create_booking(
     start_time = to_salon_time(booking.start_time, org.timezone)
     await check_booking_horizon(db, org.id, start_time.date())
 
-    service, master = await load_service_and_master(db, org.id, booking.service_id, booking.master_id)
-
     if start_time <= org_now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot book a time in the past")
 
-    end_time = start_time + timedelta(minutes=service.duration_minutes)
-
-    await check_slot_free(db, booking.master_id, start_time, end_time)
-    await check_on_slot_grid(db, booking.master_id, start_time)
+    if booking.master_id is not None:
+        service, master = await load_service_and_master(db, org.id, booking.service_id, booking.master_id)
+        end_time = start_time + timedelta(minutes=service.duration_minutes)
+        await check_slot_free(db, master.id, start_time, end_time)
+        await check_on_slot_grid(db, master.id, start_time)
+    else:
+        # «Любой мастер»: из тех, у кого это время свободно, берём самого незагруженного в этот день
+        service = await get_owned_active(db, models.Service, booking.service_id, org.id, "Service")
+        end_time = start_time + timedelta(minutes=service.duration_minutes)
+        free = []
+        for candidate in await masters_for_service(db, org.id, service.id):
+            try:
+                await check_slot_free(db, candidate.id, start_time, end_time)
+                await check_on_slot_grid(db, candidate.id, start_time)
+            except HTTPException:
+                continue
+            free.append((await master_load(db, candidate.id, start_time.date()), candidate.id, candidate))
+        if not free:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NO_FREE_MASTER)
+        master = min(free, key=lambda item: item[:2])[2]
 
     # дальше проверка «не больше 3 будущих записей» и создание клиента: строго по одному запросу на телефон
     await lock_client_phone(db, org.id, booking.client_phone)
@@ -194,7 +216,7 @@ async def public_create_booking(
         organization_id=org.id,
         client_id=client.id,
         service=service,
-        master_id=booking.master_id,
+        master_id=master.id,
         start_time=start_time,
         end_time=end_time,
         notes=booking.notes,
@@ -236,9 +258,9 @@ async def public_create_booking(
 async def get_available_dates(
     request: Request,
     slug: str,
-    master_id: int,
     service_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    master_id: int | None = None,
     month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM"),
     date_from: date_type | None = Query(default=None, alias="from", description="Первый день (вместо month)"),
     date_to: date_type | None = Query(default=None, alias="to", description="Последний день, не больше 31 дня"),
@@ -264,7 +286,12 @@ async def get_available_dates(
         raise HTTPException(status_code=422, detail="Pass month=YYYY-MM or both from and to")
 
     org = await get_organization_by_slug(slug, db)
-    service, _ = await load_service_and_master(db, org.id, service_id, master_id)
+    if master_id is not None:
+        service, _ = await load_service_and_master(db, org.id, service_id, master_id)
+        master_ids = [master_id]
+    else:  # «любой мастер»: день свободен, если свободен хоть один мастер, который делает услугу
+        service = await get_owned_active(db, models.Service, service_id, org.id, "Service")
+        master_ids = [m.id for m in await masters_for_service(db, org.id, service_id)]
 
     org_now = await get_org_now(db, org.id)
     today = org_now.date()
@@ -275,8 +302,10 @@ async def get_available_dates(
     end_date = min(last_day, max_date)
 
     while current_date <= end_date:
-        if await get_free_slots(db, master_id, service.duration_minutes, current_date, org_now, first_only=True):
-            available_dates.append(current_date)
+        for mid in master_ids:
+            if await get_free_slots(db, mid, service.duration_minutes, current_date, org_now, first_only=True):
+                available_dates.append(current_date)
+                break
         current_date += timedelta(days=1)
 
     return available_dates

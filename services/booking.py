@@ -180,6 +180,23 @@ async def load_service_and_master(db: AsyncSession, organization_id: int, servic
     return service, master
 
 
+async def masters_for_service(db: AsyncSession, organization_id: int, service_id: int) -> list[models.Master]:
+    """Активные мастера салона, которые делают услугу (пустой список услуг у мастера = делает все)."""
+    service = await get_owned_active(db, models.Service, service_id, organization_id, "Service")
+    result = await db.execute(
+        select(models.Master)
+        .options(selectinload(models.Master.services))
+        .where(models.Master.organization_id == organization_id, models.Master.deleted_at.is_(None))
+        .order_by(models.Master.id),
+    )
+    return [m for m in result.scalars().all() if not m.services or service.id in {s.id for s in m.services}]
+
+
+async def master_load(db: AsyncSession, master_id: int, day: date) -> int:
+    """Сколько записей у мастера в этот день (без отменённых): по этому выбираем самого свободного."""
+    return len(await get_busy_appointments(db, master_id, day))
+
+
 async def get_busy_appointments(
     db: AsyncSession, master_id: int, day: date, exclude_id: int | None = None,
 ) -> list[models.Appointment]:
