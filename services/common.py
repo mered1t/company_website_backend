@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import secrets
@@ -208,3 +208,11 @@ async def get_org_currency(db: AsyncSession, organization_id: int) -> str:
         select(models.Organization.currency).where(models.Organization.id == organization_id),
     )
     return result.scalar_one()
+
+TOTAL_HEADER = "X-Total-Count"
+
+
+async def set_total_count(response, db: AsyncSession, query) -> None:
+    """Общее число строк запроса (без skip/limit) в заголовке X-Total-Count: для «Страница X из Y» на фронте."""
+    total = (await db.execute(select(func.count()).select_from(query.order_by(None).subquery()))).scalar()
+    response.headers[TOTAL_HEADER] = str(total)

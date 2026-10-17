@@ -4,7 +4,7 @@ import re
 from itertools import islice
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
 from sqlalchemy import select, update, delete, or_, and_
@@ -28,7 +28,7 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientCommentPublic,
                              ClientCommentUpdate)
 
-from services.common import (get_owned,
+from services.common import (get_owned, set_total_count,
                              log_activity,
                              check_no_active_appointments,
                              get_owned_active,
@@ -518,9 +518,12 @@ async def anonymize_client(
 @router.get("/{client_id}/appointments", response_model=list[AppointmentWithDetails])
 async def get_client_appointments(
     client_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     status_filter: AppointmentStatus | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
 ):
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
@@ -542,7 +545,8 @@ async def get_client_appointments(
     if membership.role == models.MembershipRole.master:  # мастер видит историю клиента только у себя
         query = query.where(models.Appointment.master_id == membership.master_id)
 
-    query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc())
+    await set_total_count(response, db, query)
+    query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -550,6 +554,7 @@ async def get_client_appointments(
 @router.get("/{client_id}/activity", response_model=list[ActivityLogPublic])
 async def get_client_activity(
     client_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     skip: int = Query(default=0, ge=0),
@@ -571,12 +576,13 @@ async def get_client_activity(
     else:
         query_filter = conditions[0] & conditions[1]
 
+    query = select(models.ActivityLog).where(
+        models.ActivityLog.organization_id == membership.organization_id,
+        query_filter,
+    )
+    await set_total_count(response, db, query)
     result = await db.execute(
-        select(models.ActivityLog)
-        .where(
-            models.ActivityLog.organization_id == membership.organization_id,
-            query_filter,
-        )
+        query
         .order_by(models.ActivityLog.created_at.desc(), models.ActivityLog.id.desc())
         .offset(skip)
         .limit(limit),
@@ -622,16 +628,22 @@ async def add_client_comment(
 @router.get("/{client_id}/comments", response_model=list[ClientCommentPublic])
 async def list_client_comments(
     client_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
 ):
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
+    await set_total_count(response, db, select(models.ClientComment).where(models.ClientComment.client_id == client_id))
     result = await db.execute(
         select(models.ClientComment, models.User.username)
         .outerjoin(models.User, models.User.id == models.ClientComment.user_id)
         .where(models.ClientComment.client_id == client_id)
-        .order_by(models.ClientComment.created_at.desc(), models.ClientComment.id.desc()),
+        .order_by(models.ClientComment.created_at.desc(), models.ClientComment.id.desc())
+        .offset(skip)
+        .limit(limit),
     )
     return [
         ClientCommentPublic(id=c.id, content=c.content, author_username=username, created_at=c.created_at)

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,7 +20,7 @@ from schemas.schemas import (MasterCreate,
                              WorkingHoursExceptionCreate,
                              WorkingHoursExceptionPublic)
 
-from services.common import (log_activity,
+from services.common import (log_activity, set_total_count,
                              check_no_active_appointments,
                              restore_entity,
                              check_no_history,
@@ -289,14 +289,17 @@ async def create_time_off(
 @router.get("/{master_id}/time-off", response_model=list[TimeOffPublic])
 async def list_time_off(
     master_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
 ):
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
-    result = await db.execute(
-        select(models.TimeOff).where(models.TimeOff.master_id == master_id).order_by(models.TimeOff.start_date),
-    )
+    query = select(models.TimeOff).where(models.TimeOff.master_id == master_id)
+    await set_total_count(response, db, query)
+    result = await db.execute(query.order_by(models.TimeOff.start_date, models.TimeOff.id).offset(skip).limit(limit))
     time_offs = result.scalars().all()
     return [
         TimeOffPublic(id=t.id, start_date=t.start_date.date(), end_date=t.end_date.date(), reason=t.reason)
@@ -378,15 +381,18 @@ async def create_schedule_exception(
 @router.get("/{master_id}/schedule-exceptions", response_model=list[WorkingHoursExceptionPublic])
 async def list_schedule_exceptions(
     master_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
 ):
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
 
+    query = select(models.WorkingHoursException).where(models.WorkingHoursException.master_id == master_id)
+    await set_total_count(response, db, query)
     result = await db.execute(
-        select(models.WorkingHoursException)
-        .where(models.WorkingHoursException.master_id == master_id)
-        .order_by(models.WorkingHoursException.date),
+        query.order_by(models.WorkingHoursException.date, models.WorkingHoursException.id).offset(skip).limit(limit),
     )
     return result.scalars().all()
 

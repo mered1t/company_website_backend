@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, status, HTTPException, Query, Request, Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +10,7 @@ from schemas.billing import SubscriptionInfo
 from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
-from services.common import generate_unique_slug, generate_invitation_token, log_activity
+from services.common import generate_unique_slug, generate_invitation_token, log_activity, set_total_count
 from db.database import get_db
 from schemas import schemas
 from schemas.schemas import (OrganizationCreate,
@@ -381,17 +381,16 @@ async def revoke_invitation(
 @router.get("/{organization_id}/activity", response_model=list[ActivityLogPublic])
 async def list_activity(
     organization_id: int,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: ManagerMembership,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
+    query = select(models.ActivityLog).where(models.ActivityLog.organization_id == organization_id)
+    await set_total_count(response, db, query)
     result = await db.execute(
-        select(models.ActivityLog)
-        .where(models.ActivityLog.organization_id == organization_id)
-        .order_by(models.ActivityLog.created_at.desc(), models.ActivityLog.id.desc())
-        .offset(skip)
-        .limit(limit),
+        query.order_by(models.ActivityLog.created_at.desc(), models.ActivityLog.id.desc()).offset(skip).limit(limit),
     )
     return result.scalars().all()
 
