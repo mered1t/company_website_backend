@@ -2,12 +2,12 @@ import csv
 import io
 import re
 from itertools import islice
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
-from sqlalchemy import select, update, delete, or_, and_
+from sqlalchemy import select, update, delete, or_, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
@@ -72,9 +72,12 @@ async def create_client(
 
 @router.get("", response_model=list[ClientPublic])
 async def list_clients(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
-    q: str | None = None,
+    q: str | None = Query(default=None, max_length=100),
+    sort: Literal["name", "created_at", "last_visit"] = "name",
+    direction: Literal["asc", "desc"] = Query(default="asc", alias="dir"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
@@ -83,15 +86,41 @@ async def list_clients(
         models.Client.deleted_at.is_(None),
     )
 
-    if q:
-        search_term = f"%{q}%"
+    if q and q.strip():
+        search_term = f"%{_escape_like(q.strip())}%"
         query = query.where(
-            models.Client.full_name.ilike(search_term) | models.Client.phone.ilike(search_term),
+            models.Client.full_name.ilike(search_term, escape="\\") | models.Client.phone.ilike(search_term, escape="\\"),
         )
 
-    query = query.order_by(models.Client.id).offset(skip).limit(limit)
+    await set_total_count(response, db, query)
+
+    if sort == "last_visit":
+        # последний состоявшийся визит; клиенты без визитов — всегда в конце списка
+        column = (
+            select(func.max(models.Appointment.start_time))
+            .where(
+                models.Appointment.client_id == models.Client.id,
+                models.Appointment.deleted_at.is_(None),
+                models.Appointment.status == AppointmentStatus.completed,
+            )
+            .correlate(models.Client)
+            .scalar_subquery()
+        )
+    elif sort == "created_at":
+        column = models.Client.created_at
+    else:
+        column = func.lower(models.Client.full_name)
+    order = column.desc() if direction == "desc" else column.asc()
+    tie = models.Client.id.desc() if direction == "desc" else models.Client.id.asc()
+
+    query = query.order_by(order.nulls_last(), tie).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
+
+
+def _escape_like(value: str) -> str:
+    """% и _ в поиске — обычные символы, а не шаблоны LIKE."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 МБ

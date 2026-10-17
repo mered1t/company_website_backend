@@ -1,8 +1,8 @@
 from datetime import timedelta
 from datetime import datetime as dt
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ from services.booking import (
     create_appointment_record, persist,
 )
 
-from services.common import (get_owned,
+from services.common import (get_owned, set_total_count,
                              get_owned_active,
                              log_activity,
                              restore_entity,
@@ -45,6 +45,30 @@ def _visible_to(query, membership: models.Membership):
     if _is_master(membership):
         query = query.where(models.Appointment.master_id == membership.master_id)
     return query
+
+
+class AppointmentFilters:
+    """Фильтры списка и календаря. Каждый параметр можно повторить: ?master_id=1&master_id=2&status=scheduled."""
+
+    def __init__(
+        self,
+        master_id: list[int] | None = Query(default=None, max_length=50),
+        service_id: list[int] | None = Query(default=None, max_length=50),
+        client_id: list[int] | None = Query(default=None, max_length=50),
+        status: list[AppointmentStatus] | None = Query(default=None, max_length=4),
+    ):
+        self.master_id, self.service_id, self.client_id, self.status = master_id, service_id, client_id, status
+
+    def apply(self, query):
+        if self.master_id:
+            query = query.where(models.Appointment.master_id.in_(self.master_id))
+        if self.service_id:
+            query = query.where(models.Appointment.service_id.in_(self.service_id))
+        if self.client_id:
+            query = query.where(models.Appointment.client_id.in_(self.client_id))
+        if self.status:
+            query = query.where(models.Appointment.status.in_([s.value for s in self.status]))
+        return query
 
 
 # поля, от которых зависят деньги и история визита: мастер правит их у закрытой записи только в день визита
@@ -97,8 +121,13 @@ async def create_appointment(
 
 @router.get("", response_model=list[AppointmentPublic])
 async def list_appointments(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    filters: Annotated[AppointmentFilters, Depends()],
+    date_from: dt | None = None,
+    date_to: dt | None = None,
+    direction: Literal["asc", "desc"] = Query(default="asc", alias="dir"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ):
@@ -106,17 +135,29 @@ async def list_appointments(
         models.Appointment.organization_id == membership.organization_id,
         models.Appointment.deleted_at.is_(None),
     )
-    result = await db.execute(_visible_to(query, membership).order_by(models.Appointment.id).offset(skip).limit(limit))
+    if date_from is not None:
+        query = query.where(models.Appointment.start_time >= date_from.replace(tzinfo=None))
+    if date_to is not None:
+        query = query.where(models.Appointment.start_time <= date_to.replace(tzinfo=None))
+    query = _visible_to(filters.apply(query), membership)
+    await set_total_count(response, db, query)
+
+    if direction == "desc":
+        query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc())
+    else:
+        query = query.order_by(models.Appointment.start_time, models.Appointment.id)
+    result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
 
 @router.get("/calendar", response_model=list[AppointmentWithDetails])
 async def get_calendar(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     date_from: dt,
     date_to: dt,
-    master_id: int | None = None,
+    filters: Annotated[AppointmentFilters, Depends()],
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ):
@@ -136,11 +177,10 @@ async def get_calendar(
             models.Appointment.start_time <= date_to,
         )
     )
-    if master_id is not None:
-        query = query.where(models.Appointment.master_id == master_id)
-    query = _visible_to(query, membership)
+    query = _visible_to(filters.apply(query), membership)
+    await set_total_count(response, db, query)
 
-    query = query.order_by(models.Appointment.start_time).offset(skip).limit(limit)
+    query = query.order_by(models.Appointment.start_time, models.Appointment.id).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
