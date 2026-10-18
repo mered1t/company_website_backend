@@ -13,6 +13,7 @@ from services.reminders import reminder_loop
 from routers import users, clients, services, masters, appointments, analytics, organizations, invitations, public, admin
 from routers import notifications
 from routers import ai_chat
+from routers import waitlist
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -97,6 +98,9 @@ api_v1.include_router(
 )
 # ИИ-чат тоже только в /api/v1
 api_v1.include_router(ai_chat.router, prefix="/organizations/{organization_id}/ai-chat", tags=["ai-chat"])
+# лист ожидания (только /api/v1): публичная заявка и список в CRM
+api_v1.include_router(waitlist.public_router, prefix="/public", tags=["waitlist"])
+api_v1.include_router(waitlist.router, prefix="/organizations/{organization_id}/waitlist", tags=["waitlist"])
 
 app.include_router(api_v1)
 # Старые пути /api/... временно работают, но скрыты из документации.

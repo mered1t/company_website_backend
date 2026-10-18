@@ -2,6 +2,8 @@ from datetime import timedelta
 from datetime import datetime as dt
 from typing import Annotated, Literal
 
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -11,7 +13,8 @@ import models
 from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
-from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
+from schemas.schemas import (AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails,
+                             AppointmentSeriesCreate, AppointmentSeriesResult, SeriesCancelResult, SeriesConflict)
 
 from services.booking import (
     check_master_provides_service, check_party_size, check_slot_free,
@@ -27,6 +30,7 @@ from services.common import (get_owned, set_total_count,
 from core.time_utils import utc_now
 from domain.enums import AppointmentStatus
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
+from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_waitlist_emails
 
 router = APIRouter()
 
@@ -56,8 +60,10 @@ class AppointmentFilters:
         service_id: list[int] | None = Query(default=None, max_length=50),
         client_id: list[int] | None = Query(default=None, max_length=50),
         status: list[AppointmentStatus] | None = Query(default=None, max_length=4),
+        series_id: str | None = Query(default=None, max_length=36),
     ):
         self.master_id, self.service_id, self.client_id, self.status = master_id, service_id, client_id, status
+        self.series_id = series_id
 
     def apply(self, query):
         if self.master_id:
@@ -68,6 +74,8 @@ class AppointmentFilters:
             query = query.where(models.Appointment.client_id.in_(self.client_id))
         if self.status:
             query = query.where(models.Appointment.status.in_([s.value for s in self.status]))
+        if self.series_id:
+            query = query.where(models.Appointment.series_id == self.series_id)
         return query
 
 
@@ -119,6 +127,108 @@ async def create_appointment(
     await db.commit()
     await db.refresh(new_appointment)
     return new_appointment
+
+
+@router.post("/series", response_model=AppointmentSeriesResult, status_code=status.HTTP_201_CREATED)
+async def create_appointment_series(
+    body: AppointmentSeriesCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+):
+    """Серия записей: каждые repeat_every_weeks недель, count раз. Всё или ничего, если не просили skip_conflicts.
+
+    Писем при создании нет (как и у обычной записи из CRM); напоминания придут перед каждой записью.
+    """
+    master_id = body.master_id
+    if membership.role == models.MembershipRole.master:
+        if membership.master_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your membership is not linked to a master profile")
+        master_id = membership.master_id
+
+    await get_owned_active(db, models.Client, body.client_id, membership.organization_id, "Client")
+    service = await get_owned_active(db, models.Service, body.service_id, membership.organization_id, "Service")
+    await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+    await check_master_provides_service(db, master_id, service.id)
+    check_party_size(service, body.party_size)
+
+    first = body.start_time.replace(tzinfo=None)
+    duration = timedelta(minutes=service.duration_minutes)
+    series_id = str(uuid.uuid4())
+    created, skipped = [], []
+    for i in range(body.count):
+        start = first + timedelta(weeks=i * body.repeat_every_weeks)
+        try:
+            await check_slot_free(db, master_id, start, start + duration)
+        except HTTPException as error:
+            skipped.append(SeriesConflict(start_time=start, reason=error.detail))
+            continue
+        appointment = await create_appointment_record(
+            db, organization_id=membership.organization_id, client_id=body.client_id, service=service,
+            master_id=master_id, start_time=start, end_time=start + duration, notes=body.notes,
+            party_size=body.party_size, guest_names=body.guest_names,
+        )
+        appointment.series_id = series_id
+        created.append(appointment)
+
+    if skipped and not body.skip_conflicts:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Some dates are not available",
+                    "conflicts": [c.model_dump(mode="json") for c in skipped]},
+        )
+    if not created:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="None of the dates are available")
+
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="created", entity_type="appointment", entity_id=created[0].id,
+        details=f"Created a series of {len(created)} appointments every {body.repeat_every_weeks} week(s)",
+    )
+    await persist(db, commit=True)
+    for appointment in created:
+        await db.refresh(appointment)
+    return AppointmentSeriesResult(
+        series_id=series_id,
+        created=[AppointmentPublic.model_validate(a) for a in created],
+        skipped=skipped,
+    )
+
+
+@router.post("/series/{series_id}/cancel", response_model=SeriesCancelResult)
+async def cancel_appointment_series(
+    series_id: str,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+):
+    """Отменяет все будущие записи серии, которые ещё запланированы. Прошедшие не трогаются. Писем нет."""
+    org_now = await get_org_now(db, membership.organization_id)
+    query = select(models.Appointment).where(
+        models.Appointment.organization_id == membership.organization_id,
+        models.Appointment.series_id == series_id,
+        models.Appointment.deleted_at.is_(None),
+    )
+    rows = (await db.execute(_visible_to(query, membership))).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
+    future = [a for a in rows if a.status == AppointmentStatus.scheduled and a.start_time > org_now]
+    for appointment in future:
+        appointment.status = AppointmentStatus.cancelled
+    if future:
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="appointment", entity_id=future[0].id,
+            details=f"Cancelled {len(future)} upcoming appointment(s) of a series",
+        )
+    freed = set().union(*(freed_slot(a) for a in future)) if future else set()
+    waitlist_emails = await prepare_waitlist_emails(db, membership.organization_id, freed)
+    await db.commit()
+    dispatch_waitlist_emails(background_tasks, waitlist_emails)
+    return SeriesCancelResult(cancelled=len(future))
 
 
 @router.get("", response_model=list[AppointmentPublic])
@@ -349,9 +459,23 @@ async def update_appointment(
                 by_salon=True,
             )
 
+    # прежнее время освободилось (отмена, перенос, другой мастер или услуга): сообщить листу ожидания
+    waitlist_emails = []
+    if old_status != AppointmentStatus.cancelled and (
+        appointment.status == AppointmentStatus.cancelled
+        or appointment.start_time != old_start
+        or appointment.master_id != old_master_id
+        or appointment.service_id != old_service_id
+    ):
+        await persist(db, commit=False)
+        waitlist_emails = await prepare_waitlist_emails(
+            db, membership.organization_id, {(old_master_id, old_start.date())},
+        )
+
     await persist(db, commit=True)
     await db.refresh(appointment)
     dispatch(background_tasks, notification)
+    dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return appointment
 
 
@@ -394,6 +518,7 @@ async def restore_appointment(
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_appointment(
     appointment_id: int,
+    background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
     membership: CurrentMembership,
@@ -402,6 +527,7 @@ async def delete_appointment(
     if membership.role == models.MembershipRole.master:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Masters cannot delete appointments")
 
+    occupied_slot = appointment.status != AppointmentStatus.cancelled and appointment.deleted_at is None
     appointment.deleted_at = utc_now()
 
     await log_activity(
@@ -409,7 +535,11 @@ async def delete_appointment(
         action="deleted", entity_type="appointment", entity_id=appointment_id,
     )
 
+    waitlist_emails = []
+    if occupied_slot:
+        waitlist_emails = await prepare_waitlist_emails(db, membership.organization_id, freed_slot(appointment))
     await db.commit()
+    dispatch_waitlist_emails(background_tasks, waitlist_emails)
 
 
 @router.delete("/{appointment_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)

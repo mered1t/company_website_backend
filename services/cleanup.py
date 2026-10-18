@@ -6,6 +6,7 @@
 - приглашения: через 30 дней после окончания срока (принятые тоже — сотрудник уже в команде);
 - ссылки управления записью из писем: через 60 дней после визита;
 - счётчик вопросов ИИ-чату: старше 400 дней (лимит считается за месяц, год оставляем для учёта расходов);
+- лист ожидания: после того дня, на который ждали;
 - журнал действий: старше ACTIVITY_LOG_RETENTION_DAYS дней (по умолчанию год; 0 — не удалять).
 
 Не трогаются: клиенты, записи, комментарии, ИИ-отчёты, платежи. Уведомления чистятся отдельно (30 дней).
@@ -58,6 +59,11 @@ async def purge_old_rows(db: AsyncSession) -> dict[str, int]:
     )
     removed["appointment_tokens"] = await _delete(
         db, delete(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(old_appointments)),
+    )
+
+    # лист ожидания: день прошёл (с запасом в сутки на разницу часовых поясов)
+    removed["waitlist_entries"] = await _delete(
+        db, delete(models.WaitlistEntry).where(models.WaitlistEntry.day < (now - TOKEN_GRACE).date()),
     )
 
     removed["ai_chat_messages"] = await _delete(

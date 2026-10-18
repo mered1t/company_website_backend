@@ -222,3 +222,36 @@ def safe_send(func, *, log: tuple, **kwargs) -> None:
         func(**kwargs)
     except Exception:
         logger.exception(*log)
+
+
+# страница онлайн-записи салона на фронтенде; параметры подставляют выбранные услугу, дату и мастера
+PUBLIC_BOOKING_PATH = "/book/{slug}"
+
+
+def send_waitlist_slot_free_email(
+    to_email: str,
+    organization_name: str,
+    organization_slug: str,
+    service_name: str,
+    service_id: int,
+    day,
+    master_id: int | None = None,
+    language: str | None = DEFAULT_LANGUAGE,
+) -> None:
+    from urllib.parse import urlencode
+    query = {"service_id": service_id, "date": day.isoformat()}
+    if master_id is not None:
+        query["master_id"] = master_id
+    booking_url = _frontend_url(PUBLIC_BOOKING_PATH.format(slug=organization_slug) + "?" + urlencode(query))
+    _send(
+        to_email,
+        email_subject("waitlist_slot_free", language, organization_name=organization_name),
+        render_email(
+            "waitlist_slot_free.html",
+            language,
+            organization_name=organization_name,
+            service_name=service_name,
+            day=day.strftime("%d.%m.%Y"),
+            booking_url=booking_url,
+        ),
+    )

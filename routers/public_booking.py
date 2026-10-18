@@ -15,6 +15,7 @@ from db.database import get_db
 from domain.enums import AppointmentStatus
 from core.rate_limiter import limiter
 from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleRequest
+from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_waitlist_emails
 from services.booking import check_on_slot_grid, check_slot_free, get_free_slots, persist, to_salon_time
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
@@ -113,8 +114,10 @@ async def cancel_booking(
     notification = await prepare_cancelled_email(db, appointment, by_salon=False)
     await notify_booking(db, appointment, NotificationType.booking_cancelled)  # колокольчик в CRM
     info = _info(appointment, org_now)  # собираем до commit: после него объекты могут устареть
+    waitlist_emails = await prepare_waitlist_emails(db, appointment.organization_id, freed_slot(appointment))
     await db.commit()
     dispatch(background_tasks, notification)
+    dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return info
 
 
@@ -154,6 +157,10 @@ async def reschedule_booking(
     notification = await prepare_changed_email(db, appointment, old_start=old_start, by_salon=False)
     await notify_booking(db, appointment, NotificationType.booking_rescheduled, old_start=old_start)  # колокольчик в CRM
     info = _info(appointment, org_now)
+    waitlist_emails = await prepare_waitlist_emails(
+        db, appointment.organization_id, {(appointment.master_id, old_start.date())},
+    )
     await db.commit()
     dispatch(background_tasks, notification)
+    dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return info

@@ -433,7 +433,33 @@ class AppointmentPublic(AppointmentBase):
     status: AppointmentStatus
     price: int
     currency: str
+    series_id: str | None = None
     created_at: datetime
+
+
+MAX_SERIES_COUNT = 52  # записей в одной серии (год еженедельно)
+
+
+class AppointmentSeriesCreate(AppointmentCreate):
+    """Повторяющиеся записи: та же услуга, мастер и время каждые repeat_every_weeks недель, count раз."""
+    repeat_every_weeks: int = Field(default=1, ge=1, le=4)
+    count: int = Field(ge=2, le=MAX_SERIES_COUNT)
+    skip_conflicts: bool = False  # True: занятые даты пропустить и создать остальные
+
+
+class SeriesConflict(BaseModel):
+    start_time: datetime
+    reason: str
+
+
+class AppointmentSeriesResult(BaseModel):
+    series_id: str
+    created: list[AppointmentPublic]
+    skipped: list[SeriesConflict]
+
+
+class SeriesCancelResult(BaseModel):
+    cancelled: int
 
 class AppointmentWithDetails(AppointmentPublic):
     model_config = ConfigDict(from_attributes=True)
@@ -652,6 +678,7 @@ class PopularServiceResponse(BaseModel):
     service_id: int
     name: str
     times_booked: int
+    people: int  # сколько человек пришло по этим записям (запись компании считается по числу людей)
     total_revenue: int
 
 
@@ -659,6 +686,7 @@ class MasterWorkloadResponse(BaseModel):
     master_id: int
     full_name: str
     appointments_count: int
+    people: int  # сколько человек пришло (запись компании считается по числу людей)
     total_revenue: int
 
 
@@ -697,6 +725,7 @@ class AppointmentsSummaryResponse(BaseModel):
     cancelled: int
     scheduled: int
     no_show: int
+    people_served: int  # сколько человек пришло по выполненным записям; без записей компаний равно completed
     cancellation_rate_percent: float
     no_show_rate_percent: float
     average_check: int

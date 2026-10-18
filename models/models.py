@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import (DDL,
+from sqlalchemy import (DDL, Date,
                         DateTime,ForeignKey,
                         Integer,String, Text,
                         UniqueConstraint,
@@ -197,6 +197,8 @@ class Appointment(Base):
     party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     # имена остальных участников (необязательно, без контактов): их не больше party_size - 1
     guest_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # общий номер у записей, созданных одной серией («каждый вторник в 18:00»); у обычных записей None
+    series_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -444,3 +446,29 @@ class Payment(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class WaitlistEntry(Base):
+    """Лист ожидания: клиент просит написать ему, если на этот день освободится время на услугу.
+
+    Письмо уходит один раз (notified_at), запись не бронируется — первый, кто успеет, тот и запишется.
+    Хранится до конца дня ожидания, потом удаляется ежедневной чисткой.
+    """
+    __tablename__ = "waitlist_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="CASCADE"), nullable=False)
+    master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id", ondelete="CASCADE"), nullable=True)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    client_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str] = mapped_column(String(120), nullable=False)
+    language: Mapped[str] = mapped_column(String(5), nullable=False, default="en", server_default="en")
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+
+Index("ix_waitlist_org_day", WaitlistEntry.organization_id, WaitlistEntry.day)

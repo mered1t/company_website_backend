@@ -77,6 +77,10 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         select(models.Appointment).where(models.Appointment.organization_id == organization_id)
         .order_by(models.Appointment.start_time, models.Appointment.id),
     )).scalars().all()
+    waitlist = (await db.execute(
+        select(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == organization_id)
+        .order_by(models.WaitlistEntry.day, models.WaitlistEntry.id),
+    )).scalars().all()
 
     return {
         "format_version": EXPORT_FORMAT_VERSION,
@@ -151,10 +155,18 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
                 "id": a.id, "client_id": a.client_id, "service_id": a.service_id, "master_id": a.master_id,
                 "start_time": a.start_time, "end_time": a.end_time, "status": a.status,
                 "price": a.price, "currency": a.currency, "notes": a.notes, "party_size": a.party_size,
-                "guest_names": a.guest_names,
+                "guest_names": a.guest_names, "series_id": a.series_id,
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments
+        ],
+        "waitlist": [
+            {
+                "id": w.id, "service_id": w.service_id, "master_id": w.master_id, "day": w.day,
+                "client_name": w.client_name, "phone": w.phone, "email": w.email, "language": w.language,
+                "notified_at": w.notified_at, "created_at": w.created_at,
+            }
+            for w in waitlist
         ],
     }
 
@@ -171,6 +183,7 @@ async def delete_organization_data(db: AsyncSession, organization_id: int) -> No
 
     statements = [
         delete(models.Notification).where(models.Notification.organization_id == organization_id),
+        delete(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == organization_id),
         delete(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
         delete(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         delete(models.Appointment).where(models.Appointment.organization_id == organization_id),

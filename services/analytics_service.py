@@ -199,6 +199,7 @@ async def popular_services(db: AsyncSession, org_id: int, limit: int, period: Pe
             models.Service.id,
             models.Service.name,
             func.count(A.id).label("times_booked"),
+            func.coalesce(func.sum(A.party_size), 0).label("people"),
             func.coalesce(func.sum(A.price), 0).label("total_revenue"),
         )
         .select_from(models.Service)
@@ -215,7 +216,8 @@ async def popular_services(db: AsyncSession, org_id: int, limit: int, period: Pe
         .limit(limit),
     )
     return [
-        {"service_id": r.id, "name": r.name, "times_booked": r.times_booked, "total_revenue": r.total_revenue}
+        {"service_id": r.id, "name": r.name, "times_booked": r.times_booked, "people": int(r.people),
+         "total_revenue": r.total_revenue}
         for r in result.all()
     ]
 
@@ -227,6 +229,7 @@ async def masters_workload(db: AsyncSession, org_id: int, period: Period) -> lis
             models.Master.id,
             models.Master.full_name,
             func.count(A.id).label("appointments_count"),
+            func.coalesce(func.sum(A.party_size), 0).label("people"),
             func.coalesce(func.sum(A.price), 0).label("total_revenue"),
         )
         .select_from(models.Master)
@@ -248,6 +251,7 @@ async def masters_workload(db: AsyncSession, org_id: int, period: Period) -> lis
             "master_id": r.id,
             "full_name": r.full_name,
             "appointments_count": r.appointments_count,
+            "people": int(r.people),
             "total_revenue": r.total_revenue,
         }
         for r in result.all()
@@ -271,6 +275,8 @@ async def appointments_summary(db: AsyncSession, org_id: int, period: Period) ->
             func.count(A.id).filter(A.status == AppointmentStatus.cancelled).label("cancelled"),
             func.count(A.id).filter(A.status == AppointmentStatus.scheduled).label("scheduled"),
             func.count(A.id).filter(A.status == AppointmentStatus.no_show).label("no_show"),
+            func.coalesce(func.sum(A.party_size).filter(A.status == AppointmentStatus.completed), 0)
+            .label("people_served"),
             func.count(A.id).filter(paid).label("paid_count"),
             func.coalesce(func.sum(A.price).filter(paid), 0).label("revenue"),
         ).where(
@@ -291,6 +297,7 @@ async def appointments_summary(db: AsyncSession, org_id: int, period: Period) ->
         "cancelled": int(row.cancelled),
         "scheduled": int(row.scheduled),
         "no_show": int(row.no_show),
+        "people_served": int(row.people_served),
         "cancellation_rate_percent": round(int(row.cancelled) / total * 100, 1) if total else 0.0,
         "no_show_rate_percent": _no_show_rate(int(row.no_show), int(row.completed)),
         "average_check": round(int(row.revenue) / paid_count) if paid_count else 0,
