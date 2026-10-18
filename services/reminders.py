@@ -51,6 +51,7 @@ class _Candidate:
     organization_name: str
     service_name: str
     master_name: str
+    party_size: int = 1
 
 
 async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candidate]:
@@ -132,6 +133,7 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
                 organization_name=appointment.organization.name,
                 service_name=appointment.service.name,
                 master_name=appointment.master.full_name,
+                party_size=appointment.party_size,
             ))
     return candidates
 
@@ -180,6 +182,7 @@ async def send_due_reminders(db: AsyncSession) -> int:
                 start_time=c.start_time,
                 manage_token=manage_token,
                 language=c.language,
+                party_size=c.party_size,
             )
         except Exception:
             logger.exception("Failed to send booking reminder (appointment_id=%s)", c.appointment_id)

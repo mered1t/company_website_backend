@@ -79,6 +79,7 @@ async def prepare_cancelled_email(
         kwargs=dict(
             to_email=email, organization_name=organization_name, service_name=service_name,
             master_name=master_name, start_time=appointment.start_time, by_salon=by_salon, language=language,
+            party_size=appointment.party_size,
         ),
         log=("Failed to send booking cancellation email (appointment_id=%s)", appointment.id),
     )
@@ -104,7 +105,7 @@ async def prepare_changed_email(
         kwargs=dict(
             to_email=email, organization_name=organization_name, service_name=service_name,
             master_name=master_name, start_time=appointment.start_time, manage_token=manage_token,
-            old_start_time=old_start, by_salon=by_salon, language=language,
+            old_start_time=old_start, by_salon=by_salon, language=language, party_size=appointment.party_size,
         ),
         log=("Failed to send booking change email (appointment_id=%s)", appointment.id),
     )

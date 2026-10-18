@@ -21,6 +21,16 @@ OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
 MASTER_BUSY = "Master already has an appointment at this time"
 
 
+def check_party_size(service: models.Service, party_size: int) -> None:
+    """Компания не больше, чем разрешено у услуги."""
+    if party_size > service.max_party_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This service allows at most {service.max_party_size} "
+                   f"{'person' if service.max_party_size == 1 else 'people'} per booking",
+        )
+
+
 def is_overlap_violation(error: IntegrityError) -> bool:
     return OVERLAP_CONSTRAINT in str(error.orig)
 
@@ -113,8 +123,11 @@ async def create_appointment_record(
     end_time: datetime,
     notes: str | None = None,
     booked_online: bool = False,
+    party_size: int = 1,
+    guest_names: list[str] | None = None,
 ) -> models.Appointment:
     """Создаёт запись со снимком цены и валюты. Единственное место, где это делается."""
+    check_party_size(service, party_size)
     currency = await get_org_currency(db, organization_id)
     appointment = models.Appointment(
         organization_id=organization_id,
@@ -127,6 +140,8 @@ async def create_appointment_record(
         currency=currency,
         notes=notes,
         booked_online=booked_online,
+        party_size=party_size,
+        guest_names=list(guest_names or []),
     )
     db.add(appointment)
     await persist(db, commit=False)

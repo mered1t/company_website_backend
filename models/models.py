@@ -8,6 +8,7 @@ from sqlalchemy import (DDL,
                         UniqueConstraint,
                         Index, event, CheckConstraint)
 
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from domain.enums import AppointmentStatus
 
@@ -75,6 +76,9 @@ class ClientComment(Base):
 
 class Service(Base):
     __tablename__ = "services"
+    __table_args__ = (
+        CheckConstraint("max_party_size BETWEEN 1 AND 50", name="ck_services_max_party_size"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
@@ -84,6 +88,8 @@ class Service(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     emoji: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
+    # до скольких человек можно записать одной записью (теннис вдвоём, корт на компанию); цена — за весь слот
+    max_party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -173,6 +179,7 @@ class Appointment(Base):
             "status IN ('scheduled', 'completed', 'cancelled', 'no_show')",
             name="ck_appointments_status",
         ),
+        CheckConstraint("party_size BETWEEN 1 AND 50", name="ck_appointments_party_size"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -186,6 +193,10 @@ class Appointment(Base):
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # сколько человек пришло по этой записи (компания на одно время); слот мастера всё равно занят один раз
+    party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # имена остальных участников (необязательно, без контактов): их не больше party_size - 1
+    guest_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -288,6 +299,10 @@ class Membership(Base):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     master_id: Mapped[int | None] = mapped_column(ForeignKey("masters.id", ondelete="SET NULL"), nullable=True)
     role: Mapped[MembershipRole] = mapped_column(nullable=False)
+    # какие уведомления этот сотрудник получает в колокольчике (у каждого салона свои настройки)
+    notify_booking_created: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
+    notify_booking_cancelled: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
+    notify_booking_rescheduled: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="memberships")

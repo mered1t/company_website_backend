@@ -12,7 +12,8 @@ import models
 from auth.auth import CurrentMembership
 from core.time_utils import utc_now
 from db.database import get_db
-from schemas.notifications import NotificationPublic, ReadAllResult, UnreadCount
+from schemas.notifications import (NotificationPublic, NotificationSettings, NotificationSettingsUpdate,
+                                   ReadAllResult, UnreadCount)
 
 router = APIRouter()
 
@@ -60,6 +61,34 @@ async def list_notifications(
     if unread_only:
         query = query.where(models.Notification.read_at.is_(None))
     return [_public(n, client_name) for n, client_name in (await db.execute(query)).all()]
+
+
+def _settings(membership: models.Membership) -> NotificationSettings:
+    return NotificationSettings(
+        booking_created=membership.notify_booking_created,
+        booking_cancelled=membership.notify_booking_cancelled,
+        booking_rescheduled=membership.notify_booking_rescheduled,
+    )
+
+
+@router.get("/settings", response_model=NotificationSettings)
+async def get_notification_settings(membership: CurrentMembership):
+    """Мои выключатели колокольчика в этом салоне."""
+    return _settings(membership)
+
+
+@router.patch("/settings", response_model=NotificationSettings)
+async def update_notification_settings(
+    payload: NotificationSettingsUpdate,
+    membership: CurrentMembership,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Выключенный тип перестаёт приходить с этого момента; старые уведомления остаются."""
+    for name, value in payload.model_dump(exclude_unset=True).items():
+        setattr(membership, f"notify_{name}", value)
+    await db.commit()
+    await db.refresh(membership)
+    return _settings(membership)
 
 
 @router.get("/unread-count", response_model=UnreadCount)

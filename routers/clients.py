@@ -507,7 +507,7 @@ async def anonymize_client(
             models.Appointment.client_id == client_id,
             models.Appointment.organization_id == org_id,
         )
-        .values(notes=None)
+        .values(notes=None, guest_names=[])
         .execution_options(synchronize_session=False),
     )
 

@@ -28,10 +28,12 @@ async def notify_booking(
         organization = await db.get(models.Organization, appointment.organization_id)
         if organization is None or not get_subscription(organization).has_access:
             return 0
+        switch = getattr(models.Membership, f"notify_{type_.value}")  # сотрудник мог выключить этот тип
         user_ids = (await db.execute(
             select(models.Membership.user_id)
             .where(
                 models.Membership.organization_id == appointment.organization_id,
+                switch.is_(True),
                 or_(
                     models.Membership.role.in_([models.MembershipRole.owner, models.MembershipRole.admin]),
                     and_(

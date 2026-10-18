@@ -26,7 +26,7 @@ from services.booking import (
 )
 
 from services.booking import (
-    check_on_slot_grid, check_slot_free, create_appointment_record, lock_client_phone, to_salon_time,
+    check_on_slot_grid, check_party_size, check_slot_free, create_appointment_record, lock_client_phone, to_salon_time,
 )
 
 from core.rate_limiter import limiter
@@ -153,6 +153,8 @@ async def public_create_booking(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NO_FREE_MASTER)
         master = min(free, key=lambda item: item[:2])[2]
 
+    check_party_size(service, booking.party_size)
+
     # дальше проверка «не больше 3 будущих записей» и создание клиента: строго по одному запросу на телефон
     await lock_client_phone(db, org.id, booking.client_phone)
 
@@ -222,6 +224,8 @@ async def public_create_booking(
         end_time=end_time,
         notes=booking.notes,
         booked_online=True,
+        party_size=booking.party_size,
+        guest_names=booking.guest_names,
     )
 
     await log_activity(
@@ -244,6 +248,7 @@ async def public_create_booking(
             start_time=start_time,
             manage_token=await create_token(db, new_appointment.id, booking.language, email_to),
             language=booking.language,
+            party_size=booking.party_size,
         )
         confirmation_log = ("Failed to send booking confirmation (appointment_id=%s)", new_appointment.id)
 

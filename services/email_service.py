@@ -110,6 +110,7 @@ def send_booking_confirmation_email(
     start_time: datetime,
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
+    party_size: int = 1,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -121,6 +122,7 @@ def send_booking_confirmation_email(
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
+            party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             manage_url=manage_url,
         ),
@@ -135,6 +137,7 @@ def send_booking_reminder_email(
     start_time: datetime,
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
+    party_size: int = 1,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -146,6 +149,7 @@ def send_booking_reminder_email(
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
+            party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             manage_url=manage_url,
         ),
@@ -160,6 +164,7 @@ def send_booking_cancelled_email(
     start_time: datetime,
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
+    party_size: int = 1,
 ) -> None:
     _send(
         to_email,
@@ -170,6 +175,7 @@ def send_booking_cancelled_email(
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
+            party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             by_salon=by_salon,
         ),
@@ -186,6 +192,7 @@ def send_booking_changed_email(
     old_start_time: datetime | None = None,
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
+    party_size: int = 1,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -197,6 +204,7 @@ def send_booking_changed_email(
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
+            party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             old_when=old_start_time.strftime("%d.%m.%Y %H:%M") if old_start_time else None,
             manage_url=manage_url,

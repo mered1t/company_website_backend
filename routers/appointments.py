@@ -14,7 +14,7 @@ from db.database import get_db
 from schemas.schemas import AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails
 
 from services.booking import (
-    check_master_provides_service, check_slot_free,
+    check_master_provides_service, check_party_size, check_slot_free,
     create_appointment_record, persist,
 )
 
@@ -107,6 +107,8 @@ async def create_appointment(
         start_time=start_time,
         end_time=end_time,
         notes=appointment.notes,
+        party_size=appointment.party_size,
+        guest_names=appointment.guest_names,
     )
 
     await log_activity(
@@ -266,6 +268,20 @@ async def update_appointment(
 
         if "service_id" in update_data:
             new_currency = await get_org_currency(db, membership.organization_id)
+
+    # компания должна помещаться в услугу: и при смене числа людей, и при смене услуги
+    if "party_size" in update_data or "service_id" in update_data:
+        target_service = new_service or await get_owned_active(
+            db, models.Service, appointment.service_id, membership.organization_id, "Service")
+        check_party_size(target_service, update_data.get("party_size", appointment.party_size))
+
+    if "party_size" in update_data or "guest_names" in update_data:
+        guests = update_data.get("guest_names", appointment.guest_names) or []
+        if len(guests) > update_data.get("party_size", appointment.party_size) - 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Too many guest names for this party size",
+            )
 
     for field, value in update_data.items():
         setattr(appointment, field, value)

@@ -108,6 +108,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             {
                 "id": s.id, "name": s.name, "price": s.price, "duration_minutes": s.duration_minutes,
                 "description": s.description, "emoji": s.emoji, "photo": s.photo,
+                "max_party_size": s.max_party_size,
                 "created_at": s.created_at, "deleted_at": s.deleted_at,
             }
             for s in services
@@ -149,7 +150,8 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             {
                 "id": a.id, "client_id": a.client_id, "service_id": a.service_id, "master_id": a.master_id,
                 "start_time": a.start_time, "end_time": a.end_time, "status": a.status,
-                "price": a.price, "currency": a.currency, "notes": a.notes,
+                "price": a.price, "currency": a.currency, "notes": a.notes, "party_size": a.party_size,
+                "guest_names": a.guest_names,
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments

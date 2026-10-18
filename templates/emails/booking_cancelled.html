@@ -14,6 +14,12 @@
     <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_master }}</td>
     <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ master_name }}</b></td>
   </tr>
+  {% if party_size and party_size > 1 %}
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_people }}</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ party_size }}</b></td>
+  </tr>
+  {% endif %}
   <tr>
     <td style="padding:8px 0; color:#6b7280;">{{ t.label_when }}</td>
     <td style="padding:8px 0; text-align:right;"><b>{{ when }}</b></td>

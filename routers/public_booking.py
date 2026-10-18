@@ -42,6 +42,7 @@ def _info(appointment: models.Appointment, org_now: datetime) -> BookingManageIn
         master_name=appointment.master.full_name,
         price=appointment.price,
         currency=appointment.currency,
+        party_size=appointment.party_size,
         organization_name=appointment.organization.name,
         organization_slug=appointment.organization.slug,
         can_modify=appointment.status == AppointmentStatus.scheduled and org_now < deadline,

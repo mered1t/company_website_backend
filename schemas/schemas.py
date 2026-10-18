@@ -35,6 +35,7 @@ SLUG_PATTERN = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 
 # Имя: пробелы по краям убираются, пустая строка и "   " не проходят
 Name150 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
+GuestName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 MAX_DURATION_MINUTES = 24 * 60
 MAX_PASSWORD_LENGTH = 128
@@ -205,6 +206,9 @@ class ClientImportResult(BaseModel):
     errors: list[ClientImportError]
 
 
+MAX_PARTY_SIZE = 50  # человек в одной записи
+
+
 class ServiceBase(BaseModel):
     name: Name150
     price: int = Field(ge=0, le=MAX_PRICE)
@@ -212,6 +216,7 @@ class ServiceBase(BaseModel):
     description: str | None = None
     photo: str | None = None
     emoji: str | None = None
+    max_party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # до скольких человек в одной записи
 
 
 class ServiceCreate(ServiceBase):
@@ -227,8 +232,9 @@ class ServiceCreate(ServiceBase):
 
 
 class ServiceUpdate(PatchModel):
-    non_nullable: ClassVar[frozenset[str]] = frozenset({"name", "price", "duration_minutes"})
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"name", "price", "duration_minutes", "max_party_size"})
     name: Name150 | None = None
+    max_party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
@@ -386,16 +392,30 @@ class AppointmentBase(BaseModel):
     master_id: int
     start_time: datetime
     notes: str | None = None
+    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт по этой записи
+    guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)
+
+
+def _check_guest_count(guest_names: list[str], party_size: int) -> None:
+    if len(guest_names) > party_size - 1:
+        raise ValueError("guest_names: at most party_size - 1 names (the person who books is not listed)")
 
 
 class AppointmentCreate(AppointmentBase):
     notes: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def _guests_fit(self):
+        _check_guest_count(self.guest_names, self.party_size)
+        return self
+
 
 class AppointmentUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
-        {"client_id", "service_id", "master_id", "start_time", "status"}
+        {"client_id", "service_id", "master_id", "start_time", "status", "party_size", "guest_names"}
     )
+    party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
+    guest_names: list[GuestName] | None = Field(default=None, max_length=MAX_PARTY_SIZE - 1)
 
     client_id: int | None = None
     service_id: int | None = None
@@ -747,9 +767,16 @@ class PublicBookingRequest(BaseModel):
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
+    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт (не больше, чем у услуги)
+    guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)  # без контактов
     language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
     # Поле-ловушка для ботов: на странице оно скрыто, человек его не заполняет. Заполнено — запрос отклоняется.
     website: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def _guests_fit(self):
+        _check_guest_count(self.guest_names, self.party_size)
+        return self
 
 
 class TransferOwnershipRequest(BaseModel):
@@ -769,6 +796,7 @@ class BookingManageInfo(BaseModel):
     master_name: str
     price: int
     currency: str
+    party_size: int
     organization_name: str
     organization_slug: str
     can_modify: bool  # можно ли ещё отменить или перенести

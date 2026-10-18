@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, model_validator
 
 from domain.notifications import NotificationType
 
@@ -33,3 +33,24 @@ class UnreadCount(BaseModel):
 
 class ReadAllResult(BaseModel):
     updated: int
+
+
+class NotificationSettings(BaseModel):
+    """Какие уведомления сотрудник получает в колокольчике этого салона. По умолчанию все включены."""
+    booking_created: bool
+    booking_cancelled: bool
+    booking_rescheduled: bool
+
+
+class NotificationSettingsUpdate(BaseModel):
+    """Меняются только переданные поля. null — 422."""
+    booking_created: bool | None = None
+    booking_cancelled: bool | None = None
+    booking_rescheduled: bool | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self):
+        for name in self.model_fields_set:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
