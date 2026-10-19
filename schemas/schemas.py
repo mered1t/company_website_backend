@@ -870,3 +870,15 @@ class BookingManageInfo(BaseModel):
 
 class BookingRescheduleRequest(BaseModel):
     start_time: datetime
+
+
+class AnalyticsDashboardResponse(BaseModel):
+    """Всё для экрана аналитики одним запросом: те же данные, что у отдельных эндпоинтов."""
+    summary: AppointmentsSummaryResponse
+    revenue_trend: RevenueTrendResponse
+    status_trend: StatusTrendResponse
+    clients: ClientsSummaryResponse
+    busiest_hours: list[BusiestHourCell]
+    top_clients: list[TopClientResponse]
+    popular_services: list[PopularServiceResponse]
+    masters: list[MasterWorkloadResponse]

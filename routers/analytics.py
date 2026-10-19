@@ -11,7 +11,7 @@ from auth.auth import ManagerMembership
 from services.common import get_org_now
 from db.database import get_db
 
-from schemas.schemas import StatusTrendResponse
+from schemas.schemas import AnalyticsDashboardResponse, StatusTrendResponse
 from schemas.schemas import (
     RevenueResponse,
     RevenueTrendResponse,
@@ -68,6 +68,33 @@ async def get_revenue_trend(
     if (period.date_to - period.date_from).days > MAX_TREND_DAYS:
         raise HTTPException(status_code=422, detail=f"Period must not exceed {MAX_TREND_DAYS} days")
     return await svc.revenue_trend(db, membership.organization_id, period, group_by)
+
+
+@router.get("/dashboard", response_model=AnalyticsDashboardResponse)
+async def get_dashboard(
+    db: DB,
+    membership: ManagerMembership,
+    period: PeriodDep,
+    group_by: Literal["day", "week", "month"] = "day",
+    top_limit: int = Query(default=5, ge=1, le=100),
+):
+    """Экран аналитики одним запросом вместо восьми: меньше сетевых задержек и проверок входа.
+
+    group_by относится к обоим графикам (выручка и статусы), top_limit — к топу клиентов и услуг за период.
+    """
+    if (period.date_to - period.date_from).days > MAX_TREND_DAYS:
+        raise HTTPException(status_code=422, detail=f"Period must not exceed {MAX_TREND_DAYS} days")
+    org_id = membership.organization_id
+    return {
+        "summary": await svc.appointments_summary(db, org_id, period),
+        "revenue_trend": await svc.revenue_trend(db, org_id, period, group_by),
+        "status_trend": await svc.status_trend(db, org_id, period, group_by),
+        "clients": await svc.clients_summary(db, org_id, period),
+        "busiest_hours": await svc.busiest_hours(db, org_id, period),
+        "top_clients": await svc.top_clients(db, org_id, top_limit, period),
+        "popular_services": await svc.popular_services(db, org_id, top_limit, period),
+        "masters": await svc.masters_workload(db, org_id, period),
+    }
 
 
 @router.get("/status-trend", response_model=StatusTrendResponse)
