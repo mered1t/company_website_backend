@@ -222,40 +222,141 @@ async def popular_services(db: AsyncSession, org_id: int, limit: int, period: Pe
     ]
 
 
+async def _available_hours(db: AsyncSession, master_ids: list[int], first_day, last_day) -> dict[int, float]:
+    """Часы по графику каждого мастера за дни периода, с учётом отгулов и особых часов (как в записи)."""
+    if not master_ids:
+        return {}
+    period_start = datetime.combine(first_day, time.min)
+    period_end = datetime.combine(last_day, time.max)
+    weekly = (await db.execute(
+        select(models.WorkingHours).where(models.WorkingHours.master_id.in_(master_ids)),
+    )).scalars().all()
+    time_off = (await db.execute(
+        select(models.TimeOff).where(
+            models.TimeOff.master_id.in_(master_ids),
+            models.TimeOff.start_date <= period_end,
+            models.TimeOff.end_date >= period_start,
+        ),
+    )).scalars().all()
+    exceptions = (await db.execute(
+        select(models.WorkingHoursException).where(
+            models.WorkingHoursException.master_id.in_(master_ids),
+            models.WorkingHoursException.date >= period_start,
+            models.WorkingHoursException.date <= period_end,
+        ),
+    )).scalars().all()
+
+    def minutes(start: str, end: str) -> int:
+        sh, sm = map(int, start.split(":"))
+        eh, em = map(int, end.split(":"))
+        return max(0, (eh * 60 + em) - (sh * 60 + sm))
+
+    by_weekday: dict[tuple[int, int], int] = {}
+    for wh in weekly:
+        key = (wh.master_id, wh.day_of_week)
+        by_weekday[key] = by_weekday.get(key, 0) + minutes(wh.start_time, wh.end_time)
+    special: dict[tuple[int, object], int] = {}
+    for e in exceptions:
+        key = (e.master_id, e.date.date())
+        special[key] = special.get(key, 0) + minutes(e.start_time, e.end_time)
+
+    result = {}
+    for master_id in master_ids:
+        own_off = [t for t in time_off if t.master_id == master_id]
+        total = 0
+        day = first_day
+        while day <= last_day:
+            day_start, day_end = datetime.combine(day, time.min), datetime.combine(day, time.max)
+            if not any(t.start_date <= day_end and t.end_date >= day_start for t in own_off):
+                if (master_id, day) in special:
+                    total += special[(master_id, day)]
+                else:
+                    total += by_weekday.get((master_id, day.weekday()), 0)
+            day += timedelta(days=1)
+        result[master_id] = round(total / 60, 1)
+    return result
+
+
 async def masters_workload(db: AsyncSession, org_id: int, period: Period) -> list[dict]:
+    """По мастерам: выполнено, неявки, отмены, люди, выручка, средний чек и загрузка.
+
+    Загрузка = занятые часы (все записи, кроме отменённых) / часы по графику с учётом отгулов и особых часов.
+    """
     currency = await get_org_currency(db, org_id)
+    completed = A.status == AppointmentStatus.completed
+    paid = and_(completed, A.currency == currency)
+    busy = A.status != AppointmentStatus.cancelled
+    minutes = extract("epoch", A.end_time - A.start_time) / 60
+    revenue = func.coalesce(func.sum(A.price).filter(paid), 0)
     result = await db.execute(
         select(
             models.Master.id,
             models.Master.full_name,
-            func.count(A.id).label("appointments_count"),
-            func.coalesce(func.sum(A.party_size), 0).label("people"),
-            func.coalesce(func.sum(A.price), 0).label("total_revenue"),
+            func.count(A.id).filter(completed).label("appointments_count"),
+            func.count(A.id).filter(A.status == AppointmentStatus.no_show).label("no_show"),
+            func.count(A.id).filter(A.status == AppointmentStatus.cancelled).label("cancelled"),
+            func.coalesce(func.sum(A.party_size).filter(completed), 0).label("people"),
+            func.count(A.id).filter(paid).label("paid_count"),
+            revenue.label("total_revenue"),
+            func.coalesce(func.sum(minutes).filter(busy), 0).label("booked_minutes"),
         )
         .select_from(models.Master)
         .outerjoin(
             A,
             (A.master_id == models.Master.id)
             & (A.deleted_at.is_(None))
-            & (A.status == AppointmentStatus.completed)
-            & (A.currency == currency)
             & (A.start_time >= period.date_from)
             & (A.start_time <= period.date_to),
         )
         .where(models.Master.organization_id == org_id)
         .group_by(models.Master.id, models.Master.full_name)
-        .order_by(func.sum(A.price).desc().nulls_last()),
+        .order_by(revenue.desc(), models.Master.id),
     )
-    return [
-        {
+    rows = result.all()
+    available = await _available_hours(db, [r.id for r in rows], period.date_from.date(), period.date_to.date())
+    out = []
+    for r in rows:
+        booked_hours = round(float(r.booked_minutes) / 60, 1)
+        hours = available.get(r.id, 0.0)
+        out.append({
             "master_id": r.id,
             "full_name": r.full_name,
-            "appointments_count": r.appointments_count,
+            "appointments_count": int(r.appointments_count),
+            "no_show": int(r.no_show),
+            "cancelled": int(r.cancelled),
+            "no_show_rate_percent": _no_show_rate(int(r.no_show), int(r.appointments_count)),
             "people": int(r.people),
-            "total_revenue": r.total_revenue,
-        }
-        for r in result.all()
-    ]
+            "total_revenue": int(r.total_revenue),
+            "average_check": round(int(r.total_revenue) / int(r.paid_count)) if r.paid_count else 0,
+            "booked_hours": booked_hours,
+            "available_hours": hours,
+            "load_percent": round(booked_hours / hours * 100, 1) if hours else 0.0,
+        })
+    return out
+
+
+async def status_trend(db: AsyncSession, org_id: int, period: Period, group_by: str) -> dict:
+    """Сколько записей в каждом статусе по дням, неделям или месяцам (по времени начала записи)."""
+    assert group_by in GROUP_BY_VALUES  # значение вставляется в SQL как литерал, поэтому только из белого списка
+    bucket = func.date_trunc(literal_column(f"'{group_by}'"), A.start_time)
+    rows = (await db.execute(
+        select(bucket.label("bucket"), A.status, func.count(A.id).label("cnt"))
+        .where(A.organization_id == org_id, A.deleted_at.is_(None), *_period_conditions(period))
+        .group_by(bucket, A.status),
+    )).all()
+    counts: dict[datetime, dict[str, int]] = {}
+    for r in rows:
+        counts.setdefault(r.bucket, {})[r.status] = int(r.cnt)
+
+    points = []
+    current = _bucket_start(period.date_from, group_by)
+    while current <= period.date_to:
+        c = counts.get(current, {})
+        point = {"period_start": current, **{s.value: c.get(s.value, 0) for s in AppointmentStatus}}
+        point["total"] = sum(c.values())
+        points.append(point)
+        current = _next_bucket(current, group_by)
+    return {"date_from": period.date_from, "date_to": period.date_to, "group_by": group_by, "points": points}
 
 
 def _no_show_rate(no_show: int, completed: int) -> float:

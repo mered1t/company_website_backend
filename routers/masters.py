@@ -20,7 +20,7 @@ from schemas.schemas import (MasterCreate,
                              WorkingHoursExceptionCreate,
                              WorkingHoursExceptionPublic)
 
-from services.common import (log_activity, set_total_count,
+from services.common import (log_activity, set_total_count, only_changed, changed_fields_details,
                              check_no_active_appointments,
                              restore_entity,
                              check_no_history,
@@ -145,15 +145,16 @@ async def update_master(
     if not master:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
 
-    update_data = master_update.model_dump(exclude_unset=True)
+    update_data = only_changed(master, master_update.model_dump(exclude_unset=True))
     for field, value in update_data.items():
         setattr(master, field, value)
 
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="master", entity_id=master_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+    if update_data:
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="master", entity_id=master_id,
+            details=changed_fields_details(update_data),
+        )
 
     await db.commit()
     await db.refresh(master, attribute_names=["working_hours"])

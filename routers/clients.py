@@ -20,6 +20,7 @@ from db.database import get_db
 from schemas.schemas import (AppointmentWithDetails,
                              ClientCreate,
                              ClientPublic,
+                             ClientsSummary,
                              ClientUpdate,
                              ActivityLogPublic,
                              ClientImportError,
@@ -28,7 +29,7 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientCommentPublic,
                              ClientCommentUpdate)
 
-from services.common import (get_owned, set_total_count,
+from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
                              log_activity,
                              check_no_active_appointments,
                              get_owned_active,
@@ -76,7 +77,7 @@ async def list_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     q: str | None = Query(default=None, max_length=100),
-    sort: Literal["name", "created_at", "last_visit"] = "name",
+    sort: Literal["name", "created_at", "last_visit", "visits"] = "name",
     direction: Literal["asc", "desc"] = Query(default="asc", alias="dir"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
@@ -106,6 +107,17 @@ async def list_clients(
             .correlate(models.Client)
             .scalar_subquery()
         )
+    elif sort == "visits":
+        column = (
+            select(func.count(models.Appointment.id))
+            .where(
+                models.Appointment.client_id == models.Client.id,
+                models.Appointment.deleted_at.is_(None),
+                models.Appointment.status == AppointmentStatus.completed,
+            )
+            .correlate(models.Client)
+            .scalar_subquery()
+        )
     elif sort == "created_at":
         column = models.Client.created_at
     else:
@@ -115,7 +127,63 @@ async def list_clients(
 
     query = query.order_by(order.nulls_last(), tie).offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    return await with_visit_stats(db, result.scalars().all())
+
+
+def _completed_visits():
+    """Выполненные визиты по клиентам: (client_id, visits, last_visit)."""
+    return (
+        select(
+            models.Appointment.client_id.label("client_id"),
+            func.count(models.Appointment.id).label("visits"),
+            func.max(models.Appointment.start_time).label("last_visit"),
+        )
+        .where(
+            models.Appointment.deleted_at.is_(None),
+            models.Appointment.status == AppointmentStatus.completed,
+        )
+        .group_by(models.Appointment.client_id)
+    )
+
+
+async def with_visit_stats(db: AsyncSession, clients):
+    """Добавляет к клиентам visits и last_visit одним запросом (для ответа API)."""
+    clients = list(clients)
+    ids = [c.id for c in clients]
+    stats = {}
+    if ids:
+        rows = await db.execute(_completed_visits().where(models.Appointment.client_id.in_(ids)))
+        stats = {r.client_id: (r.visits, r.last_visit) for r in rows.all()}
+    for client in clients:
+        client.visits, client.last_visit = stats.get(client.id, (0, None))
+    return clients
+
+
+@router.get("/summary", response_model=ClientsSummary)
+async def clients_summary(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    """Сколько клиентов новые (0 визитов), вернувшиеся (1–2) и постоянные (3+). Клиенты в корзине не считаются."""
+    visits = _completed_visits().where(
+        models.Appointment.organization_id == membership.organization_id,
+    ).subquery()
+    count = func.coalesce(visits.c.visits, 0)
+    row = (await db.execute(
+        select(
+            func.count(models.Client.id).label("total"),
+            func.count(models.Client.id).filter(count == 0).label("new"),
+            func.count(models.Client.id).filter(count.between(1, 2)).label("returning"),
+            func.count(models.Client.id).filter(count >= 3).label("regular"),
+        )
+        .select_from(models.Client)
+        .outerjoin(visits, visits.c.client_id == models.Client.id)
+        .where(
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        ),
+    )).one()
+    return ClientsSummary(total=row.total, new=row.new, returning=row.returning, regular=row.regular)
 
 
 def _escape_like(value: str) -> str:
@@ -324,7 +392,7 @@ async def get_client(
     client = result.scalars().first()
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-    return client
+    return (await with_visit_stats(db, [client]))[0]
 
 
 @router.patch("/{client_id}", response_model=ClientPublic)
@@ -337,15 +405,16 @@ async def update_client(
 ):
     client = await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
-    update_data = client_update.model_dump(exclude_unset=True)
+    update_data = only_changed(client, client_update.model_dump(exclude_unset=True))
     for field, value in update_data.items():
         setattr(client, field, value)
 
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="client", entity_id=client_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+    if update_data:
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="client", entity_id=client_id,
+            details=changed_fields_details(update_data),
+        )
 
     try:
         await db.commit()
@@ -353,7 +422,7 @@ async def update_client(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
     await db.refresh(client)
-    return client
+    return (await with_visit_stats(db, [client]))[0]
 
 
 @router.post("/{client_id}/restore", response_model=ClientPublic)
@@ -403,7 +472,7 @@ async def restore_client(
 
     await db.commit()
     await db.refresh(client)
-    return client
+    return (await with_visit_stats(db, [client]))[0]
 
 
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

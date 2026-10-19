@@ -178,6 +178,16 @@ class ClientPublic(ClientBase):
 
     id: int
     created_at: datetime
+    visits: int = 0  # сколько выполненных визитов
+    last_visit: datetime | None = None  # начало последнего выполненного визита, местное время салона
+
+
+class ClientsSummary(BaseModel):
+    """Счётчики для шапки раздела «Клиенты» (по выполненным визитам)."""
+    total: int
+    new: int        # 0 визитов
+    returning: int  # 1–2 визита
+    regular: int    # 3 и больше
 
 
 class ClientCommentCreate(BaseModel):
@@ -416,6 +426,9 @@ class AppointmentUpdate(PatchModel):
     )
     party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
     guest_names: list[GuestName] | None = Field(default=None, max_length=MAX_PARTY_SIZE - 1)
+    # false: не писать клиенту об этом изменении или отмене (салон уже договорился по телефону).
+    # Не поле записи: на напоминание по новому времени не влияет.
+    notify_client: bool = True
 
     client_id: int | None = None
     service_id: int | None = None
@@ -685,9 +698,32 @@ class PopularServiceResponse(BaseModel):
 class MasterWorkloadResponse(BaseModel):
     master_id: int
     full_name: str
-    appointments_count: int
+    appointments_count: int  # выполненные записи
+    no_show: int
+    cancelled: int
+    no_show_rate_percent: float
     people: int  # сколько человек пришло (запись компании считается по числу людей)
     total_revenue: int
+    average_check: int
+    booked_hours: float  # часы записей за период (все, кроме отменённых)
+    available_hours: float  # часы по графику с учётом отгулов и особых часов
+    load_percent: float  # booked_hours / available_hours; 0, если по графику часов нет
+
+
+class StatusTrendPoint(BaseModel):
+    period_start: datetime
+    scheduled: int
+    completed: int
+    cancelled: int
+    no_show: int
+    total: int
+
+
+class StatusTrendResponse(BaseModel):
+    date_from: datetime
+    date_to: datetime
+    group_by: str
+    points: list[StatusTrendPoint]
 
 
 class UpcomingBirthdayResponse(BaseModel):

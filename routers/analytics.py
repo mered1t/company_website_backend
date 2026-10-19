@@ -11,6 +11,7 @@ from auth.auth import ManagerMembership
 from services.common import get_org_now
 from db.database import get_db
 
+from schemas.schemas import StatusTrendResponse
 from schemas.schemas import (
     RevenueResponse,
     RevenueTrendResponse,
@@ -67,6 +68,19 @@ async def get_revenue_trend(
     if (period.date_to - period.date_from).days > MAX_TREND_DAYS:
         raise HTTPException(status_code=422, detail=f"Period must not exceed {MAX_TREND_DAYS} days")
     return await svc.revenue_trend(db, membership.organization_id, period, group_by)
+
+
+@router.get("/status-trend", response_model=StatusTrendResponse)
+async def get_status_trend(
+    db: DB,
+    membership: ManagerMembership,
+    period: PeriodDep,
+    group_by: Literal["day", "week", "month"] = "day",
+):
+    """Записи по статусам за каждый день, неделю или месяц периода (не длиннее 366 дней)."""
+    if (period.date_to - period.date_from).days > MAX_TREND_DAYS:
+        raise HTTPException(status_code=422, detail=f"Period must not exceed {MAX_TREND_DAYS} days")
+    return await svc.status_trend(db, membership.organization_id, period, group_by)
 
 
 @router.get("/appointments-summary", response_model=AppointmentsSummaryResponse)

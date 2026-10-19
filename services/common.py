@@ -80,6 +80,36 @@ async def log_activity(
     db.add(log_entry)
 
 
+def _comparable(value):
+    """Значение для сравнения «изменилось ли поле»: время без часового пояса, дата из datetime."""
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def only_changed(obj, update_data: dict) -> dict:
+    """Оставляет из PATCH только поля, значение которых действительно отличается от текущего.
+
+    Фронтенд часто присылает форму целиком: без этого в журнале «изменены все поля», а правила для
+    отдельных полей (например, закрытая запись у мастера) срабатывали бы на неизменённые значения.
+    """
+    changed = {}
+    for field, value in update_data.items():
+        current = getattr(obj, field, None)
+        new = _comparable(value)
+        old = _comparable(current)
+        if isinstance(old, datetime) and not isinstance(new, datetime) and hasattr(new, "year"):
+            old = old.date()  # в базе datetime, а пришла дата (день рождения)
+        if old == new:
+            continue
+        changed[field] = value
+    return changed
+
+
+def changed_fields_details(fields) -> str:
+    return f"Updated fields: {', '.join(fields)}"
+
+
 async def check_no_active_appointments(db: AsyncSession, field_name: str, entity_id: int, entity_label: str, organization_id: int) -> None:
     field = getattr(models.Appointment, field_name)
     org_now = await get_org_now(db, organization_id)

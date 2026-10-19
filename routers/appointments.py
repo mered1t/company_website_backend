@@ -21,7 +21,7 @@ from services.booking import (
     create_appointment_record, persist,
 )
 
-from services.common import (get_owned, set_total_count,
+from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
                              get_owned_active,
                              log_activity,
                              restore_entity,
@@ -328,6 +328,8 @@ async def update_appointment(
     _check_can_modify(membership, appointment)
 
     update_data = appointment_update.model_dump(exclude_unset=True)
+    notify_client = update_data.pop("notify_client", True)
+    update_data = only_changed(appointment, update_data)  # форма целиком: учитываем только то, что поменялось
     old_status, old_start = appointment.status, appointment.start_time
     old_master_id, old_service_id = appointment.master_id, appointment.service_id
 
@@ -432,16 +434,17 @@ async def update_appointment(
         await check_slot_free(db, appointment.master_id, appointment.start_time,
                                   appointment.end_time, exclude_id=appointment.id)
 
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="appointment", entity_id=appointment_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+    if update_data:
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="appointment", entity_id=appointment_id,
+            details=changed_fields_details(update_data),
+        )
 
     # Письмо клиенту: будущую запись отменили или поменяли время, мастера, услугу.
     # Прошедшие записи и правка заметок/статуса письма не вызывают.
     notification = None
-    if old_status == AppointmentStatus.scheduled:
+    if old_status == AppointmentStatus.scheduled and notify_client:
         with db.no_autoflush:
             org_now = await get_org_now(db, membership.organization_id)
         if appointment.status == AppointmentStatus.cancelled and old_start > org_now:

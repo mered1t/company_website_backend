@@ -10,7 +10,7 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
 
-from services.common import (get_owned,
+from services.common import (get_owned, only_changed, changed_fields_details,
                              log_activity,
                              check_no_active_appointments,
                              get_owned_active,
@@ -96,15 +96,16 @@ async def update_service(
 ):
     service = await get_owned_active(db, models.Service, service_id, membership.organization_id, "Service")
 
-    update_data = service_update.model_dump(exclude_unset=True)
+    update_data = only_changed(service, service_update.model_dump(exclude_unset=True))
     for field, value in update_data.items():
         setattr(service, field, value)
 
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="service", entity_id=service_id,
-        details=f"Updated fields: {', '.join(update_data.keys())}",
-    )
+    if update_data:
+        await log_activity(
+            db, membership.organization_id, current_user.id,
+            action="updated", entity_type="service", entity_id=service_id,
+            details=changed_fields_details(update_data),
+        )
 
     await db.commit()
     await db.refresh(service)
