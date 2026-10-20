@@ -91,13 +91,12 @@ async def test_patch_party_size_and_service(api, org_a, court):
     assert both.status_code == 200, both.text
 
 
-async def test_public_booking_for_two(api, db, org_a, court):
-    r = await _public(api, org_a, court, party_size=2)
+async def test_public_booking_is_for_one_person(api, db, org_a, court):
+    """Компании записывает только салон в CRM; онлайн — всегда один человек."""
+    for extra in ({"party_size": 2}, {"guest_names": ["Friend"]}, {"open_capacity": 4}):
+        assert (await _public(api, org_a, court, **extra)).status_code == 422
+    r = await _crm(api, org_a, court, party_size=2)
     assert r.status_code == 201, r.text
-    assert r.json()["party_size"] == 2
-    too_many = await _public(api, org_a, court, phone="+380671230012", party_size=5,
-                             start_time=_at(court.day, 12).isoformat())
-    assert too_many.status_code == 400
     token = await create_token(db, r.json()["id"], "en")
     await db.commit()
     info = await api.get(f"{SLUG_BASE}/booking/{token}")

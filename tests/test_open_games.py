@@ -37,13 +37,15 @@ async def court(db, org_a):
     coach = models.Master(organization_id=org_a.org_id, full_name="Coach")
     host = models.Client(organization_id=org_a.org_id, full_name="Host Player", phone="+380670000401",
                          email="host@example.com")
-    db.add_all([tennis, haircut, coach, host])
+    other = models.Client(organization_id=org_a.org_id, full_name="Other Host", phone="+380670000402")
+    db.add_all([tennis, haircut, coach, host, other])
     await db.flush()
     db.add_all([models.WorkingHours(master_id=coach.id, day_of_week=d, start_time="08:00", end_time="20:00")
                 for d in range(7)])
     await db.commit()
     day = (await get_org_now(db, org_a.org_id)).date() + timedelta(days=3)
-    return SimpleNamespace(tennis=tennis.id, haircut=haircut.id, coach=coach.id, host=host.id, day=day)
+    return SimpleNamespace(tennis=tennis.id, haircut=haircut.id, coach=coach.id, host=host.id, other=other.id,
+                           day=day)
 
 
 def _at(day, hour):
@@ -51,10 +53,10 @@ def _at(day, hour):
 
 
 async def _book(api, org, court, **body):
-    return await api.post(f"{SLUG_BASE}/{org.slug}/book", json={
-        "client_full_name": "Olena Host", "client_phone": "+380671230001", "client_email": "olena@example.com",
-        "service_id": court.tennis, "master_id": court.coach, "start_time": _at(court.day, 10).isoformat(),
-        "language": "uk", "open_capacity": 4, **body})
+    """Открытую игру создаёт салон в CRM (онлайн-запись всегда на одного человека)."""
+    return await api.post(f"{org.base}/appointments", headers=org.headers, json={
+        "client_id": court.host, "service_id": court.tennis, "master_id": court.coach,
+        "start_time": _at(court.day, 10).isoformat(), "open_capacity": 4, **body})
 
 
 async def _join(api, org, code, phone="+380671230002", email="anna@example.com", name="Anna Player", **body):
@@ -80,13 +82,15 @@ async def test_service_needs_two_places_for_open_games(api, org_a):
 
 
 # ------------------------------------------------------------------ организатор открывает игру
-async def test_online_booking_opens_a_game(api, org_a, court, sent_emails):
+async def test_salon_opens_a_game(api, org_a, court):
     r = await _book(api, org_a, court, party_size=2)
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["open_capacity"] == 4 and body["join_code"] and body["price"] == 2 * PRICE
-    html = sent_emails[-1]["html"]
-    assert f"/book/{org_a.slug}/game/{body['join_code']}" in html and "Відкрита гра" in html
+    online = await api.post(f"{SLUG_BASE}/{org_a.slug}/book", json={
+        "client_full_name": "Olena", "client_phone": "+380671230001", "service_id": court.tennis,
+        "master_id": court.coach, "start_time": _at(court.day, 12).isoformat(), "open_capacity": 4})
+    assert online.status_code == 422  # онлайн игру не открыть
 
     info = await api.get(f"{SLUG_BASE}/{org_a.slug}/games/{body['join_code']}")
     assert info.status_code == 200
@@ -104,7 +108,7 @@ async def test_open_game_rules(api, org_a, court):
 
 async def test_games_list(api, org_a, court):
     code = (await _book(api, org_a, court)).json()["join_code"]
-    full = await _book(api, org_a, court, client_phone="+380671230009", party_size=4,
+    full = await _book(api, org_a, court, client_id=court.other, party_size=4,
                        start_time=_at(court.day, 12).isoformat())
     assert full.status_code == 201
     games = (await api.get(f"{SLUG_BASE}/{org_a.slug}/games")).json()
@@ -120,18 +124,19 @@ async def test_join_and_leave(api, db, org_a, court, sent_emails):
     code = booking["join_code"]
     sent_emails.clear()
 
-    r = await _join(api, org_a, code, party_size=2)
+    assert (await _join(api, org_a, code, party_size=2)).status_code == 422  # онлайн входит один человек
+    r = await _join(api, org_a, code)
     assert r.status_code == 201, r.text
-    assert r.json()["players"] == 3 and r.json()["spots_left"] == 1
+    assert r.json()["players"] == 2 and r.json()["spots_left"] == 2
     to = {m["to"]: m for m in sent_emails}
-    assert set(to) == {"anna@example.com", "olena@example.com"}
+    assert set(to) == {"anna@example.com", "host@example.com"}
     assert "You've joined the game" in to["anna@example.com"]["html"]
-    assert "€30" in to["anna@example.com"]["html"]  # 2 × €15
-    assert "Anna" in to["olena@example.com"]["html"]  # организатору: кто присоединился
+    assert "€15" in to["anna@example.com"]["html"]  # цена за человека
+    assert "Anna" in to["host@example.com"]["html"]  # организатору: кто присоединился
     token = _spot_token(to["anna@example.com"]["html"])
 
     appointment = await api.get(f"{org_a.base}/appointments/{booking['id']}", headers=org_a.headers)
-    assert appointment.json()["party_size"] == 3 and appointment.json()["price"] == 3 * PRICE
+    assert appointment.json()["party_size"] == 2 and appointment.json()["price"] == 2 * PRICE
     bell = await api.get(f"{org_a.base}/notifications", headers=org_a.headers)
     assert "game_joined" in [n["type"] for n in bell.json()]
     assert any(n["client_name"] == "Anna Player" for n in bell.json() if n["type"] == "game_joined")
@@ -144,7 +149,7 @@ async def test_join_and_leave(api, db, org_a, court, sent_emails):
     sent_emails.clear()
     r = await api.post(f"{SLUG_BASE}/participation/{token}/leave")
     assert r.status_code == 200 and r.json()["status"] == "left" and r.json()["game"]["spots_left"] == 3
-    assert [m["to"] for m in sent_emails] == ["olena@example.com"]
+    assert [m["to"] for m in sent_emails] == ["host@example.com"]
     assert (await api.post(f"{SLUG_BASE}/participation/{token}/leave")).status_code == 400
     after = await api.get(f"{org_a.base}/appointments/{booking['id']}", headers=org_a.headers)
     assert after.json()["party_size"] == 1 and after.json()["price"] == PRICE
@@ -154,8 +159,7 @@ async def test_join_and_leave(api, db, org_a, court, sent_emails):
 async def test_join_rules(api, org_a, court):
     code = (await _book(api, org_a, court, party_size=2)).json()["join_code"]
     assert (await _join(api, org_a, code, website="bot")).status_code == 400
-    assert (await _join(api, org_a, code, phone="+380671230001")).status_code == 400  # сам организатор
-    assert (await _join(api, org_a, code, party_size=3)).status_code == 400  # мест только 2
+    assert (await _join(api, org_a, code, phone="+380670000401")).status_code == 400  # сам организатор
     assert (await _join(api, org_a, code)).status_code == 201
     assert (await _join(api, org_a, code)).status_code == 400  # второй раз тот же номер
     assert (await _join(api, org_a, code, phone="+380671230003", email=None)).status_code == 201  # без email можно
@@ -177,7 +181,7 @@ async def test_participants_hear_about_cancel_and_move(api, db, org_a, court, se
     assert len(anna) == 1 and "The game was moved" in anna[0]["html"]
 
     # организатор отменяет по ссылке из своего письма
-    token = await create_token(db, booking["id"], "uk", "olena@example.com")
+    token = await create_token(db, booking["id"], "uk", "host@example.com")
     await db.commit()
     sent_emails.clear()
     assert (await api.post(f"{SLUG_BASE}/booking/{token}/cancel")).status_code == 200

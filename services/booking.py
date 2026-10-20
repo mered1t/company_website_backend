@@ -16,9 +16,18 @@ from sqlalchemy.orm import selectinload
 import models
 from services.common import get_available_intervals, get_org_currency, get_owned_active
 from domain.enums import AppointmentStatus
+from domain.business import GROUP_BOOKINGS_OFF
 
 OVERLAP_CONSTRAINT = "appointments_no_master_overlap"
 MASTER_BUSY = "Master already has an appointment at this time"
+
+
+async def ensure_group_bookings(db: AsyncSession, organization_id: int) -> None:
+    """Компании, гости и открытые игры — только если у салона включены групповые записи."""
+    with db.no_autoflush:
+        organization = await db.get(models.Organization, organization_id)
+    if organization is None or not organization.group_bookings:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GROUP_BOOKINGS_OFF)
 
 
 def check_party_size(service: models.Service, party_size: int) -> None:
@@ -128,6 +137,8 @@ async def create_appointment_record(
 ) -> models.Appointment:
     """Создаёт запись со снимком цены и валюты. Единственное место, где это делается."""
     check_party_size(service, party_size)
+    if party_size > 1 or guest_names:
+        await ensure_group_bookings(db, organization_id)
     currency = await get_org_currency(db, organization_id)
     appointment = models.Appointment(
         organization_id=organization_id,

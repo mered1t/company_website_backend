@@ -19,7 +19,7 @@ from schemas.schemas import (AppointmentCreate, AppointmentPublic, AppointmentUp
 
 from services.booking import (
     check_master_provides_service, check_party_size, check_slot_free,
-    create_appointment_record, persist,
+    create_appointment_record, ensure_group_bookings, persist,
 )
 
 from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
@@ -122,7 +122,7 @@ async def create_appointment(
         guest_names=appointment.guest_names,
     )
     if appointment.open_capacity is not None:
-        set_open_capacity(new_appointment, service, appointment.open_capacity, joined=0)
+        await set_open_capacity(db, new_appointment, service, appointment.open_capacity, joined=0)
 
     await log_activity(
         db, membership.organization_id, current_user.id,
@@ -175,7 +175,7 @@ async def create_appointment_series(
         )
         appointment.series_id = series_id
         if body.open_capacity is not None:
-            set_open_capacity(appointment, service, body.open_capacity, joined=0)
+            await set_open_capacity(db, appointment, service, body.open_capacity, joined=0)
         created.append(appointment)
 
     if skipped and not body.skip_conflicts:
@@ -400,6 +400,9 @@ async def update_appointment(
             db, models.Service, appointment.service_id, membership.organization_id, "Service")
         check_party_size(target_service, update_data.get("party_size", appointment.party_size))
 
+    if update_data.get("party_size", 1) > 1 or update_data.get("guest_names"):
+        await ensure_group_bookings(db, membership.organization_id)
+
     if "party_size" in update_data or "guest_names" in update_data:
         guests = update_data.get("guest_names", appointment.guest_names) or []
         if len(guests) > update_data.get("party_size", appointment.party_size) - 1:
@@ -452,7 +455,7 @@ async def update_appointment(
         current_service = new_service or await get_owned_active(
             db, models.Service, appointment.service_id, membership.organization_id, "Service")
         if capacity_changed:
-            set_open_capacity(appointment, current_service, new_capacity,
+            await set_open_capacity(db, appointment, current_service, new_capacity,
                               joined=await joined_seats(db, appointment.id))
         if appointment.open_capacity:
             await recalc_open_game(db, appointment, current_service)

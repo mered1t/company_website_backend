@@ -38,9 +38,13 @@ def _cutoff() -> timedelta:
     return timedelta(hours=settings.booking_change_cutoff_hours)
 
 
-async def _organization(db: AsyncSession, slug: str) -> models.Organization:
+async def _organization(db: AsyncSession, slug: str, *, games: bool = False) -> models.Organization:
+    """games=True: игры салона. Если групповые записи выключены, игр «нет» (404)."""
     from routers.public import get_organization_by_slug  # здесь, чтобы не было кругового импорта
-    return await get_organization_by_slug(slug, db)
+    org = await get_organization_by_slug(slug, db)
+    if games and not org.group_bookings:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+    return org
 
 
 async def _game_public(db: AsyncSession, appointment: models.Appointment, org_now: datetime) -> OpenGamePublic:
@@ -69,6 +73,8 @@ async def list_open_games(
 ):
     """Будущие открытые игры салона, в которых есть свободные места (ближайшие первыми, не больше 100)."""
     org = await _organization(db, slug)
+    if not org.group_bookings:
+        return []
     org_now = await get_org_now(db, org.id)
     query = (
         select(models.Appointment)
@@ -97,7 +103,7 @@ async def list_open_games(
 @limiter.limit("30/minute")
 async def get_open_game(request: Request, slug: str, code: str, db: Annotated[AsyncSession, Depends(get_db)]):
     """Страница игры по ссылке от организатора. Полная, прошедшая или отменённая игра тоже показывается (can_join=false)."""
-    org = await _organization(db, slug)
+    org = await _organization(db, slug, games=True)
     appointment = await load_game(db, org.id, code)
     return await _game_public(db, appointment, await get_org_now(db, org.id))
 
@@ -115,7 +121,7 @@ async def join_open_game(
     """Присоединиться к игре: сразу, без одобрения. Письмо со ссылкой «выйти из игры» — если указан email."""
     if body.website:  # поле-ловушка для ботов
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request")
-    org = await _organization(db, slug)
+    org = await _organization(db, slug, games=True)
     org_now = await get_org_now(db, org.id)
 
     await lock_client_phone(db, org.id, body.client_phone)

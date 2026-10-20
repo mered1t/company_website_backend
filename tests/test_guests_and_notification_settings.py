@@ -85,10 +85,8 @@ async def test_patch_guest_names(api, org_a, court):
     assert (await api.patch(url, headers=org_a.headers, json={"guest_names": None})).status_code == 422
 
 
-async def test_public_booking_with_guests(api, org_a, court):
-    r = await _public(api, org_a, court, party_size=2, guest_names=["Friend"])
-    assert r.status_code == 201, r.text
-    assert r.json()["guest_names"] == ["Friend"]
+async def test_public_booking_has_no_guests(api, org_a, court):
+    assert (await _public(api, org_a, court, party_size=2, guest_names=["Friend"])).status_code == 422
 
 
 async def test_anonymizing_the_client_erases_guest_names(api, db, org_a, court):
@@ -130,10 +128,7 @@ def test_people_row_only_for_a_party(template):
     assert "Кількість людей" not in one
 
 
-async def test_confirmation_and_reminder_mention_the_party(api, db, org_a, court, sent_emails):
-    r = await _public(api, org_a, court, party_size=3)
-    assert r.status_code == 201, r.text
-    assert _people(sent_emails[-1]["html"], "People", 3)
+async def test_reminder_mentions_the_party(api, db, org_a, court, sent_emails):
     # напоминание по записи из CRM (у клиента есть email): компания из 3 человек в ближайшие 24 часа
     soon = (await get_org_now(db, org_a.org_id)).replace(minute=0, second=0, microsecond=0) + timedelta(hours=3)
     db.add(models.Appointment(

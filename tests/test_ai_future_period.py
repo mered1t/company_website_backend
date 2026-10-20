@@ -4,6 +4,7 @@ import pytest
 
 from services import ai_service
 import models
+from services.common import get_org_now
 
 
 @pytest.fixture
@@ -40,7 +41,7 @@ async def _seed_recent(db, org):
 
 async def test_future_end_date_is_cut_at_today(api, db, org_a, fake_model):
     await _seed_recent(db, org_a)
-    today = _today().date()
+    today = (await get_org_now(db, org_a.org_id)).date()  # «сегодня» салона, а не UTC (иначе тест падает после полуночи по Киеву)
     body = {
         "date_from": (today - timedelta(days=14)).isoformat(),
         "date_to": (today + timedelta(days=30)).isoformat(),
@@ -56,7 +57,7 @@ async def test_future_end_date_is_cut_at_today(api, db, org_a, fake_model):
 
 async def test_past_period_has_no_note(api, db, org_a, fake_model):
     await _seed_recent(db, org_a)
-    today = _today().date()
+    today = (await get_org_now(db, org_a.org_id)).date()  # «сегодня» салона, а не UTC (иначе тест падает после полуночи по Киеву)
     body = {
         "date_from": (today - timedelta(days=14)).isoformat(),
         "date_to": today.isoformat(),
@@ -69,7 +70,7 @@ async def test_past_period_has_no_note(api, db, org_a, fake_model):
 
 async def test_fully_future_period_is_rejected_without_calling_model(api, db, org_a, fake_model):
     await _seed_recent(db, org_a)
-    today = _today().date()
+    today = (await get_org_now(db, org_a.org_id)).date()  # «сегодня» салона, а не UTC (иначе тест падает после полуночи по Киеву)
     body = {
         "date_from": (today + timedelta(days=5)).isoformat(),
         "date_to": (today + timedelta(days=10)).isoformat(),

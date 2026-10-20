@@ -118,6 +118,8 @@ async def _create_tenant(api, name: str) -> Tenant:
     async with TestSession() as session:
         org = await session.get(models.Organization, org_id)
         org.paid_until = utc_now() + timedelta(days=365)
+        # групповые записи тоже включены, как до появления переключателя (его проверяет test_group_bookings_switch)
+        org.group_bookings = True
         await session.commit()
 
     return Tenant(org_id=org_id, slug=r.json()["slug"], headers=headers)

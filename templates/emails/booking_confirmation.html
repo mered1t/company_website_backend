@@ -15,14 +15,6 @@
 {%- if price_text %}{{ ui.row(t.label_price, price_text, last=true, mono=true) }}{% endif %}
 </table>
 {{ ui.panel_close() }}
-{%- if join_url %}
-<div style="height:16px;"></div>
-{{ ui.panel_open(accent=false) }}
-<p style="margin:0; font-family:{{ ui.FONT }}; font-size:12px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#B3A9FF;">{{ t.open_game_title }}</p>
-<p style="margin:8px 0 0; font-family:{{ ui.FONT }}; font-size:14px; line-height:1.55; color:#D6D3F5;">{{ t.open_game_hint.replace("{spots}", spots_left|string) }}</p>
-<p style="margin:10px 0 0; font-family:{{ ui.MONO }}; font-size:13px; word-break:break-all;"><a href="{{ join_url }}" target="_blank" style="color:#B3A9FF;">{{ join_url }}</a></p>
-{{ ui.panel_close() }}
-{%- endif %}
 <div style="height:24px;"></div>
 {%- if calendar_url %}{{ ui.button(calendar_url, t.add_calendar) }}{% elif google_calendar_url %}{{ ui.button(google_calendar_url, t.add_calendar) }}{% endif %}
 {{ ui.button(manage_url, t.reschedule if (calendar_url or google_calendar_url) else t.button, "secondary" if (calendar_url or google_calendar_url) else "primary") }}

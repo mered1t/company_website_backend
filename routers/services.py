@@ -19,6 +19,8 @@ from services.common import (get_owned, only_changed, changed_fields_details,
 
 from core.time_utils import utc_now
 
+from services.booking import ensure_group_bookings  # noqa: E402
+
 router = APIRouter()
 
 
@@ -37,6 +39,8 @@ async def create_service(
     membership: ManagerMembership,
 ):
     _check_open_games(service.open_games, service.max_party_size)
+    if service.max_party_size > 1 or service.open_games:
+        await ensure_group_bookings(db, membership.organization_id)
     new_service = models.Service(
         organization_id=membership.organization_id,
         **service.model_dump(),
@@ -105,6 +109,8 @@ async def update_service(
     service = await get_owned_active(db, models.Service, service_id, membership.organization_id, "Service")
 
     update_data = only_changed(service, service_update.model_dump(exclude_unset=True))
+    if update_data.get("max_party_size", 1) > 1 or update_data.get("open_games"):
+        await ensure_group_bookings(db, membership.organization_id)
     for field, value in update_data.items():
         setattr(service, field, value)
     _check_open_games(service.open_games, service.max_party_size)

@@ -149,17 +149,3 @@ GAME_STRINGS: dict[str, dict[str, str]] = {
         "player_left_body": "Një vend është sërish i lirë — loja te <b>{organization_name}</b> mbetet e hapur për të tjerët.",
     },
 }
-
-# Блок «Открытая игра» в письме-подтверждении организатору (добавляется к BOOKING_UI).
-GAME_SHARE_UI: dict[str, dict[str, str]] = {
-    "en": {"open_game_title": "Open game", "open_game_hint": "Free spots: {spots}. Share this link — anyone can join.",
-           "open_game_link": "Link to the game"},
-    "pl": {"open_game_title": "Otwarta gra", "open_game_hint": "Wolne miejsca: {spots}. Udostępnij link — każdy może dołączyć.",
-           "open_game_link": "Link do gry"},
-    "es": {"open_game_title": "Partido abierto", "open_game_hint": "Plazas libres: {spots}. Comparte el enlace: cualquiera puede unirse.",
-           "open_game_link": "Enlace al partido"},
-    "uk": {"open_game_title": "Відкрита гра", "open_game_hint": "Вільних місць: {spots}. Поділіться посиланням — приєднатися може будь-хто.",
-           "open_game_link": "Посилання на гру"},
-    "sq": {"open_game_title": "Lojë e hapur", "open_game_hint": "Vende të lira: {spots}. Ndaje lidhjen — kushdo mund të bashkohet.",
-           "open_game_link": "Lidhja e lojës"},
-}

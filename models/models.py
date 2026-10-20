@@ -285,6 +285,10 @@ class Organization(Base):
     # язык писем клиентам по записям из CRM: при онлайн-записи клиент выбирает язык сам
     client_email_language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     # для публичной страницы записи (салон заполняет в настройках)
+    # тип бизнеса (domain/business.py): необязательно, только подсказка для интерфейса и настроек по умолчанию
+    business_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    # групповые записи: несколько человек в записи, имена гостей, открытые игры. Выключено — всё это недоступно
+    group_bookings: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     address: Mapped[str | None] = mapped_column(String(300), nullable=True, default=None)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)  # E.164
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)

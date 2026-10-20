@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from core.config import settings
+from services.booking import ensure_group_bookings
 from core.time_utils import utc_now
 
 GAME_PAGE_PATH = "/book/{slug}/game/{code}"   # страница игры на фронтенде (присоединиться)
@@ -86,8 +87,8 @@ def _bad(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-def set_open_capacity(appointment: models.Appointment, service: models.Service, capacity: int | None,
-                      joined: int) -> None:
+async def set_open_capacity(db: AsyncSession, appointment: models.Appointment, service: models.Service,
+                            capacity: int | None, joined: int) -> None:
     """Открыть игру (capacity), поменять число мест или закрыть (None). joined — места присоединившихся."""
     if capacity is None:
         if joined:
@@ -96,6 +97,7 @@ def set_open_capacity(appointment: models.Appointment, service: models.Service, 
         appointment.join_code = None
         appointment.price = service.price
         return
+    await ensure_group_bookings(db, appointment.organization_id)
     if not service.open_games:
         raise _bad("This service does not allow open games")
     if capacity > service.max_party_size:

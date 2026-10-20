@@ -98,6 +98,8 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             "timezone": org.timezone,
             "currency": org.currency,
             "booking_horizon_days": org.booking_horizon_days,
+            "business_type": org.business_type,
+            "group_bookings": org.group_bookings,
             "plan": org.plan,
             "address": org.address,
             "phone": org.phone,

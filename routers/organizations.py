@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import models
 from auth.auth import AnyStatusMembership, OwnerMembership, OwnerMembershipAnyStatus, verify_password_async
 from schemas.billing import SubscriptionInfo
+from domain.business import GROUP_BY_DEFAULT
 from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
 from auth.auth import ManagerMembership
@@ -79,6 +80,9 @@ async def create_organization(
         currency=org.currency or "EUR",
         # клиентам по записям из CRM пишем на языке владельца; салон может поменять в настройках
         client_email_language=current_user.language or "en",
+        business_type=org.business_type,
+        group_bookings=(org.group_bookings if org.group_bookings is not None
+                        else org.business_type in GROUP_BY_DEFAULT),
     )
 
     db.add(new_org)

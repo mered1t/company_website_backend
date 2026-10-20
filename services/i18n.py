@@ -737,12 +737,10 @@ MONTHS_SHORT: dict[str, tuple[str, ...]] = {
     "sq": ("JAN", "SHK", "MAR", "PRI", "MAJ", "QER", "KOR", "GUS", "SHT", "TET", "NËN", "DHJ"),
 }
 
-# открытые игры: свои письма и блок «поделиться ссылкой» в подтверждении организатору
-from services.i18n_games import GAME_SHARE_UI, GAME_STRINGS  # noqa: E402
+# открытые игры: свои письма
+from services.i18n_games import GAME_STRINGS  # noqa: E402
 
 EMAIL_STRINGS["game_notice"] = GAME_STRINGS
-for _lang, _strings in GAME_SHARE_UI.items():
-    BOOKING_UI[_lang].update(_strings)
 
 BOOKING_TEMPLATES = ("booking_confirmation", "booking_reminder", "booking_changed", "booking_cancelled",
                      "waitlist_slot_free", "game_notice")

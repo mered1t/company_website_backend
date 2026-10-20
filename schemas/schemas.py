@@ -11,6 +11,7 @@ import re
 from domain.currencies import SUPPORTED_CURRENCIES, MAX_PRICE
 
 from domain.enums import AppointmentStatus
+from domain.business import BusinessType
 from schemas.billing import SubscriptionInfo
 
 
@@ -496,6 +497,9 @@ class OrganizationCreate(BaseModel):
     name: str = Name150
     timezone: str | None = None
     currency: str | None = None
+    # необязательный вопрос «чем вы занимаетесь?»: sports и studio сразу включают групповые записи
+    business_type: BusinessType | None = None
+    group_bookings: bool | None = None  # явно включить или выключить; не передано — по типу бизнеса
 
     @field_validator("currency")
     @classmethod
@@ -511,9 +515,11 @@ class OrganizationCreate(BaseModel):
 class OrganizationUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
         {"name", "timezone", "booking_horizon_days", "slug", "currency",
-         "staff_booking_reminders", "client_email_language"}
+         "staff_booking_reminders", "client_email_language", "group_bookings"}
     )
     staff_booking_reminders: bool | None = None  # напоминать клиентам о записях, созданных в CRM
+    business_type: BusinessType | None = None  # null очищает
+    group_bookings: bool | None = None  # групповые записи и открытые игры
     client_email_language: Language | None = None  # язык этих напоминаний
 
     # публичная страница записи; null очищает поле
@@ -565,6 +571,8 @@ class OrganizationPublic(BaseModel):
     plan: str
     staff_booking_reminders: bool = True
     client_email_language: str = "en"
+    business_type: BusinessType | None = None
+    group_bookings: bool = False
     address: str | None = None
     phone: str | None = None
     logo_url: str | None = None
@@ -588,6 +596,7 @@ class PublicOrganizationInfo(BaseModel):
     timezone: str
     booking_horizon_days: int
     booking_enabled: bool = True  # false, если у салона закончилась подписка: записываться нельзя
+    group_bookings: bool = False  # true: показывать выбор числа людей и открытые игры
     address: str | None = None
     phone: str | None = None
     logo_url: str | None = None
@@ -841,18 +850,14 @@ class PublicBookingRequest(BaseModel):
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
-    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт (не больше, чем у услуги)
-    guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)  # без контактов
-    # открытая игра: сколько всего людей (вместе с компанией бронирующего); свободные места займут другие
-    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
+    # Онлайн всегда записывается один человек. Компании, гостей и открытые игры создаёт только салон в CRM.
+    # Поля оставлены, чтобы старый фронт получил понятную 422, а не молча записал одного вместо компании.
+    party_size: int = Field(default=1, ge=1, le=1)
+    guest_names: list[GuestName] = Field(default_factory=list, max_length=0)
+    open_capacity: None = None
     language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
     # Поле-ловушка для ботов: на странице оно скрыто, человек его не заполняет. Заполнено — запрос отклоняется.
     website: str | None = Field(default=None, max_length=200)
-
-    @model_validator(mode="after")
-    def _guests_fit(self):
-        _check_guest_count(self.guest_names, self.party_size)
-        return self
 
 
 class TransferOwnershipRequest(BaseModel):
@@ -919,7 +924,7 @@ class JoinGameRequest(BaseModel):
     client_full_name: Name150
     client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     client_email: EmailStr | None = Field(default=None, max_length=120)
-    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сам человек и друзья, которых он берёт
+    party_size: int = Field(default=1, ge=1, le=1)  # онлайн входит один человек: компании записывает только салон
     language: Language | None = None
     website: str | None = Field(default=None, max_length=200)  # поле-ловушка для ботов
 
