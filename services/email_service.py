@@ -85,7 +85,10 @@ def send_password_reset_email(to_email: str, token: str, language: str | None = 
 
 
 def send_verification_email(to_email: str, token: str, language: str | None = DEFAULT_LANGUAGE) -> None:
-    verify_url = _frontend_url(f"/verify-email?token={token}")
+    if settings.backend_url:  # страница подтверждения на самом бэкенде (routers/users.py)
+        verify_url = f"{settings.backend_url.rstrip('/')}/api/v1/users/verify-email?token={token}"
+    else:
+        verify_url = _frontend_url(f"/verify-email?token={token}")
     _send(
         to_email,
         email_subject("verify_email", language),

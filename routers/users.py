@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, status, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
@@ -28,6 +29,7 @@ from schemas.schemas import (
     ChangePasswordRequest)
 
 from core.rate_limiter import limiter
+from core.config import settings
 from pydantic import BaseModel, Field
 from services.account import OwnsOrganizationError, delete_user_account
 
@@ -434,26 +436,116 @@ async def logout_all_devices(
     await db.commit()
 
 
+async def _verify_email_token(db: AsyncSession, raw_token: str) -> bool:
+    """Подтверждает почту по токену из письма. False, если токен неизвестен, использован или истёк."""
+    result = await db.execute(
+        select(models.EmailVerificationToken).where(models.EmailVerificationToken.token == hash_token(raw_token)),
+    )
+    verification_token = result.scalars().first()
+    if not verification_token or verification_token.used or verification_token.expires_at < utc_now():
+        return False
+    user = await db.get(models.User, verification_token.user_id)
+    user.email_verified = True
+    verification_token.used = True
+    await db.commit()
+    return True
+
+
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_email(
     payload: VerifyEmailRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(
-        select(models.EmailVerificationToken).where(models.EmailVerificationToken.token == hash_token(payload.token)),
-    )
-    verification_token = result.scalars().first()
-
-    if not verification_token or verification_token.used or verification_token.expires_at < utc_now():
+    if not await _verify_email_token(db, payload.token):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
-    user_result = await db.execute(select(models.User).where(models.User.id == verification_token.user_id))
-    user = user_result.scalars().first()
 
-    user.email_verified = True
-    verification_token.used = True
+# ------------------------------------------------------------------ страница подтверждения для ссылки из письма
+# Ссылка ведёт на GET со страницей и кнопкой; подтверждает только нажатие (POST). Так почтовые сканеры
+# (Outlook, антивирусы), которые сами открывают ссылки из писем, не тратят токен и ничего не подтверждают.
 
-    await db.commit()
+_VERIFY_TEXTS = {
+    "en": ("Confirm your email", "Click the button to confirm your email address.", "Confirm email",
+           "Email confirmed", "Thank you! Your email address is confirmed.",
+           "Link is no longer valid", "This link has expired or was already used. Request a new email in the app.",
+           "Go to {app}"),
+    "pl": ("Potwierdź e-mail", "Kliknij przycisk, aby potwierdzić adres e-mail.", "Potwierdź e-mail",
+           "E-mail potwierdzony", "Dziękujemy! Twój adres e-mail został potwierdzony.",
+           "Link jest nieaktualny", "Link wygasł lub został już użyty. Poproś o nowy e-mail w aplikacji.",
+           "Przejdź do {app}"),
+    "es": ("Confirma tu correo", "Pulsa el botón para confirmar tu correo electrónico.", "Confirmar correo",
+           "Correo confirmado", "¡Gracias! Tu correo electrónico está confirmado.",
+           "El enlace ya no es válido", "El enlace ha caducado o ya se usó. Solicita un nuevo correo en la aplicación.",
+           "Ir a {app}"),
+    "uk": ("Підтвердіть пошту", "Натисніть кнопку, щоб підтвердити електронну пошту.", "Підтвердити пошту",
+           "Пошту підтверджено", "Дякуємо! Вашу електронну пошту підтверджено.",
+           "Посилання недійсне", "Посилання застаріло або вже використане. Надішліть новий лист у застосунку.",
+           "Перейти до {app}"),
+    "sq": ("Konfirmo email-in", "Kliko butonin për të konfirmuar adresën e email-it.", "Konfirmo email-in",
+           "Email-i u konfirmua", "Faleminderit! Adresa jote e email-it u konfirmua.",
+           "Lidhja nuk është më e vlefshme", "Lidhja ka skaduar ose është përdorur. Kërko një email të ri në aplikacion.",
+           "Shko te {app}"),
+}
+
+
+async def _token_language(db: AsyncSession, raw_token: str) -> str:
+    row = (await db.execute(
+        select(models.User.language)
+        .join(models.EmailVerificationToken, models.EmailVerificationToken.user_id == models.User.id)
+        .where(models.EmailVerificationToken.token == hash_token(raw_token)),
+    )).scalar()
+    return row if row in _VERIFY_TEXTS else "en"
+
+
+def _verify_page(language: str, title: str, text: str, *, form_action: str | None = None,
+                 token: str | None = None, button: str | None = None) -> HTMLResponse:
+    from html import escape
+    t = _VERIFY_TEXTS[language]
+    if form_action:
+        action = (f'<form method="post" action="{escape(form_action)}">'
+                  f'<input type="hidden" name="token" value="{escape(token or "")}">'
+                  f'<button type="submit">{escape(button or "")}</button></form>')
+    else:
+        link = escape(settings.frontend_url.rstrip("/") + "/")
+        action = f'<a class="button" href="{link}">{escape(t[7].format(app=settings.app_name))}</a>'
+    html = f"""<!doctype html><html lang="{language}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>{escape(title)} · {escape(settings.app_name)}</title>
+<style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;margin:0;
+display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}}
+.card{{background:#fff;border-radius:12px;padding:32px;max-width:420px;width:100%;box-shadow:0 1px 3px #0001;
+text-align:center}}h1{{font-size:20px;color:#111827;margin:0 0 12px}}p{{color:#4b5563;line-height:1.5;margin:0 0 24px}}
+button,.button{{background:#111827;color:#fff;border:0;border-radius:8px;padding:12px 24px;font-size:15px;
+cursor:pointer;text-decoration:none;display:inline-block}}</style></head>
+<body><div class="card"><h1>{escape(title)}</h1><p>{escape(text)}</p>{action}</div></body></html>"""
+    return HTMLResponse(html, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+@router.get("/verify-email", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit("30/minute")
+async def verify_email_page(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: str = Query(default="", max_length=200),
+):
+    """Страница по ссылке из письма: только кнопка, сама ссылка ничего не меняет."""
+    language = await _token_language(db, token)
+    t = _VERIFY_TEXTS[language]
+    return _verify_page(language, t[0], t[1], form_action=f"{request.url.path}/confirm", token=token, button=t[2])
+
+
+@router.post("/verify-email/confirm", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit("10/minute")
+async def verify_email_confirm(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: Annotated[str, Form(max_length=200)] = "",
+):
+    language = await _token_language(db, token)
+    t = _VERIFY_TEXTS[language]
+    if await _verify_email_token(db, token):
+        return _verify_page(language, t[3], t[4])
+    return _verify_page(language, t[5], t[6])
 
 
 @router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
