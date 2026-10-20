@@ -1,0 +1,105 @@
+{#- Элементы писем в стиле Clientum (тёмная тема). Только таблицы и стили в тегах: так письмо одинаково
+    выглядит в Gmail, Outlook и Apple Mail. SVG и flexbox почтовые программы не поддерживают. -#}
+{% set FONT = "'Geist', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" %}
+{% set MONO = "'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" %}
+
+{% macro heading(text, center=false) -%}
+<h1 style="margin:0; font-family:{{ FONT }}; font-size:28px; line-height:1.2; font-weight:700; letter-spacing:-0.02em; color:#ECEDF5;{% if center %} text-align:center;{% endif %}">{{ text }}</h1>
+{%- endmacro %}
+
+{% macro para(text, center=false, size=15, color="#A4A7BE", top=12) -%}
+<p style="margin:{{ top }}px 0 0; font-family:{{ FONT }}; font-size:{{ size }}px; line-height:1.6; color:{{ color }};{% if center %} text-align:center;{% endif %}">{{ text }}</p>
+{%- endmacro %}
+
+{% macro badge(text, kind="green") -%}
+{%- set c = {"green": ("#132019", "#1F3A2B", "#8FDDB0"), "amber": ("#2A2113", "#4A3A1E", "#F2C77E"),
+             "grey": ("#1A1B26", "#2A2C3A", "#A4A7BE"), "violet": ("#1D1A3D", "#3A3474", "#B3A9FF")}[kind] -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;"><tr>
+<td style="background:{{ c[0] }}; border:1px solid {{ c[1] }}; border-radius:999px; padding:5px 12px; font-family:{{ FONT }}; font-size:12px; font-weight:500; color:{{ c[2] }};">&#9679;&nbsp;{{ text }}</td>
+</tr></table>
+{%- endmacro %}
+
+{% macro button(url, label, kind="primary", full=false) -%}
+{%- if kind == "primary" -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"{% if full %} width="100%"{% endif %} style="display:inline-table; margin:0 8px 10px 0;"><tr>
+<td align="center" bgcolor="#6A5AF0" style="background:#6A5AF0; border-radius:12px;">
+<a href="{{ url }}" target="_blank" style="display:block; padding:14px 22px; font-family:{{ FONT }}; font-size:15px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:12px;">{{ label }}</a>
+</td></tr></table>
+{%- elif kind == "secondary" -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"{% if full %} width="100%"{% endif %} style="display:inline-table; margin:0 8px 10px 0;"><tr>
+<td align="center" style="border:1px solid #34325E; border-radius:12px;">
+<a href="{{ url }}" target="_blank" style="display:block; padding:13px 20px; font-family:{{ FONT }}; font-size:15px; color:#D6D3F5; text-decoration:none; border-radius:12px;">{{ label }}</a>
+</td></tr></table>
+{%- else -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table; margin:0 8px 10px 0;"><tr>
+<td align="center"><a href="{{ url }}" target="_blank" style="display:block; padding:14px 10px; font-family:{{ FONT }}; font-size:15px; color:#A4A7BE; text-decoration:none;">{{ label }}</a></td>
+</tr></table>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro row(label, value, last=false, mono=false, strike=false, dim=false) -%}
+<tr>
+<td style="padding:12px 0;{% if not last %} border-bottom:1px solid #22242F;{% endif %} font-family:{{ FONT }}; font-size:14px; color:{% if dim %}#7D8099{% else %}#A4A7BE{% endif %};">{{ label }}</td>
+<td align="right" style="padding:12px 0;{% if not last %} border-bottom:1px solid #22242F;{% endif %} font-family:{% if mono %}{{ MONO }}{% else %}{{ FONT }}{% endif %}; font-size:14px; color:{% if dim %}#8A8DA6{% else %}#ECEDF5{% endif %};{% if strike %} text-decoration:line-through;{% endif %}">{{ value }}</td>
+</tr>
+{%- endmacro %}
+
+{% macro fallback(label, url) -%}
+<p style="margin:20px 0 0; font-family:{{ FONT }}; font-size:12px; line-height:1.5; color:#5F6279; word-break:break-all;">{{ label }} <a href="{{ url }}" style="color:#8A8DA6;">{{ url }}</a></p>
+{%- endmacro %}
+
+{#- Шапка письма от салона: логотип (или первая буква названия), название и номер записи -#}
+{% macro salon_header(name, logo_url=none, booking_label=none, booking_number=none) -%}
+<tr><td style="padding:20px 32px; border-bottom:1px solid #1F2130;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="middle" style="width:48px;">
+{%- if logo_url -%}
+<img src="{{ logo_url }}" width="36" height="36" alt="" style="display:block; width:36px; height:36px; border-radius:10px; object-fit:cover;">
+{%- else -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="36" height="36" align="center" valign="middle" bgcolor="#1E1C3A" style="width:36px; height:36px; background:#1E1C3A; border:1px solid #3A3474; border-radius:10px; font-family:{{ FONT }}; font-size:16px; font-weight:700; color:#A99EFF;">{{ (name or "•")[:1]|upper }}</td></tr></table>
+{%- endif -%}
+</td>
+<td valign="middle" style="font-family:{{ FONT }}; font-size:16px; font-weight:600; color:#ECEDF5;">{{ name }}</td>
+{%- if booking_number %}
+<td valign="middle" align="right" style="font-family:{{ MONO }}; font-size:12px; color:#7D8099; white-space:nowrap;">{{ booking_label }} #{{ booking_number }}</td>
+{%- endif %}
+</tr></table>
+</td></tr>
+{%- endmacro %}
+
+{#- Плашка с датой: «ОКТ 21» слева, день недели, время и услуга справа -#}
+{% macro date_panel(month_short, day_number, weekday, time_range, service_name, date_text) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td width="66" valign="middle" style="width:66px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="66" align="center" valign="middle" bgcolor="#1D1A3D" style="width:66px; padding:12px 0; background:#1D1A3D; border:1px solid #3A3474; border-radius:14px;">
+<div style="font-family:{{ FONT }}; font-size:11px; font-weight:600; letter-spacing:0.08em; color:#B3A9FF;">{{ month_short }}</div>
+<div style="font-family:{{ MONO }}; font-size:26px; line-height:1.2; color:#FFFFFF;">{{ day_number }}</div>
+</td></tr></table>
+</td>
+<td valign="middle" style="padding-left:18px;">
+<div style="font-family:{{ FONT }}; font-size:13px; color:#A4A7BE;">{{ weekday|capitalize }}, {{ date_text }}</div>
+<div style="font-family:{{ MONO }}; font-size:22px; line-height:1.4; color:#FFFFFF;">{{ time_range }}</div>
+<div style="font-family:{{ FONT }}; font-size:14px; color:#D6D3F5;">{{ service_name }}</div>
+</td>
+</tr></table>
+{%- endmacro %}
+
+{% macro panel_open(accent=true) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="background:{% if accent %}#161722{% else %}#12131C{% endif %}; border:1px solid {% if accent %}#2F2C5C{% else %}#22242F{% endif %}; border-radius:16px; padding:22px;">
+{%- endmacro %}
+{% macro panel_close() -%}
+</td></tr></table>
+{%- endmacro %}
+
+{#- Адрес и телефон салона -#}
+{% macro salon_contacts(t, address, phone, maps_url) -%}
+{%- if address or phone -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="background:#12131C; border:1px solid #262838; border-radius:14px; padding:16px 18px;">
+{%- if address %}<div style="font-family:{{ FONT }}; font-size:14px; font-weight:600; color:#ECEDF5;">&#128205;&nbsp; {{ address }}</div>{% endif %}
+{%- if phone %}<div style="margin-top:4px; font-family:{{ FONT }}; font-size:13px; color:#A4A7BE;">&#9742;&nbsp; <a href="tel:{{ phone }}" style="color:#A4A7BE; text-decoration:none;">{{ phone }}</a></div>{% endif %}
+{%- if maps_url %}<div style="margin-top:8px;"><a href="{{ maps_url }}" target="_blank" style="font-family:{{ FONT }}; font-size:13.5px; color:#B3A9FF; text-decoration:none;">{{ t.directions }} &rarr;</a></div>{% endif %}
+</td></tr></table>
+{%- endif -%}
+{%- endmacro %}

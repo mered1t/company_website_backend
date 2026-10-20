@@ -5,7 +5,7 @@
 from datetime import date as date_type, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
@@ -19,6 +19,7 @@ from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_wait
 from services.booking import check_on_slot_grid, check_slot_free, get_free_slots, persist, to_salon_time
 from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
 from services.booking_tokens import load_by_token
+from services.ics import appointment_ics
 from services.notifications import notify_booking
 from domain.notifications import NotificationType
 from services.billing import ensure_booking_enabled
@@ -68,6 +69,21 @@ async def get_booking(request: Request, token: str, db: Annotated[AsyncSession, 
     appointment = await load_by_token(db, token)
     org_now = await get_org_now(db, appointment.organization_id)
     return _info(appointment, org_now)
+
+
+@router.get("/booking/{token}/calendar.ics", response_class=Response,
+            responses={200: {"content": {"text/calendar": {}}}})
+@limiter.limit("30/minute")
+async def get_booking_calendar(request: Request, token: str, db: Annotated[AsyncSession, Depends(get_db)]):
+    """Файл для кнопки «Добавить в календарь» из письма: открывается в Apple Calendar, Outlook, Google."""
+    appointment = await load_by_token(db, token)
+    manage_url = f"{settings.frontend_url.rstrip('/')}/booking/{token}"
+    return Response(
+        content=appointment_ics(appointment, manage_url),
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="booking-{appointment.id}.ics"',
+                 "Cache-Control": "no-store"},
+    )
 
 
 @router.get("/booking/{token}/available-slots", response_model=list[AvailableSlot])

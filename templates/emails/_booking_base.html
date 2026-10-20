@@ -1,0 +1,10 @@
+{#- Каркас писем клиенту салона: шапка с салоном, подвал «вы получили письмо, потому что…» -#}
+{%- extends "base_email.html" -%}
+{%- block header %}{% import "_ui.html" as ui %}{{ ui.salon_header(organization_name, logo_url, t.label_booking, booking_number) }}{% endblock %}
+{%- block footer %}{% import "_ui.html" as ui %}
+<p style="margin:0; font-family:{{ ui.FONT }}; font-size:12.5px; line-height:1.6; color:#7D8099;">{{ t.footer_reason }}</p>
+{%- if salon_address or salon_phone %}
+<p style="margin:4px 0 0; font-family:{{ ui.FONT }}; font-size:12px; color:#5F6279;">{{ organization_name }}{% if salon_address %} · {{ salon_address }}{% endif %}{% if salon_phone %} · {{ salon_phone }}{% endif %}</p>
+{%- endif %}
+<p style="margin:8px 0 0; font-family:{{ ui.FONT }}; font-size:12px; color:#5F6279;"><span style="color:#6A5AF0;">&#9632;</span>&nbsp;{{ t.sent_via }} {{ app_name }}</p>
+{%- endblock %}

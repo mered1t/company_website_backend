@@ -114,6 +114,7 @@ def send_booking_confirmation_email(
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
+    view: dict | None = None,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -122,6 +123,7 @@ def send_booking_confirmation_email(
         render_email(
             "booking_confirmation.html",
             language,
+            **(view or {}),
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
@@ -141,6 +143,7 @@ def send_booking_reminder_email(
     manage_token: str,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
+    view: dict | None = None,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -149,6 +152,7 @@ def send_booking_reminder_email(
         render_email(
             "booking_reminder.html",
             language,
+            **(view or {}),
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
@@ -168,6 +172,7 @@ def send_booking_cancelled_email(
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
+    view: dict | None = None,
 ) -> None:
     _send(
         to_email,
@@ -175,6 +180,7 @@ def send_booking_cancelled_email(
         render_email(
             "booking_cancelled.html",
             language,
+            **(view or {}),
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,
@@ -196,6 +202,7 @@ def send_booking_changed_email(
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
+    view: dict | None = None,
 ) -> None:
     manage_url = _frontend_url(f"/booking/{manage_token}")
     _send(
@@ -204,6 +211,7 @@ def send_booking_changed_email(
         render_email(
             "booking_changed.html",
             language,
+            **(view or {}),
             organization_name=organization_name,
             service_name=service_name,
             master_name=master_name,

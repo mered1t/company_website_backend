@@ -1,43 +1,32 @@
-{% extends "base_email.html" %}
-
-{% block content %}
-<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
-<p style="color:#374151; font-size:14px; line-height:1.6;">
-  {{ t.body }}
-</p>
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size:14px; color:#374151;">
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_service }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ service_name }}</b></td>
-  </tr>
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_master }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ master_name }}</b></td>
-  </tr>
-  {% if party_size and party_size > 1 %}
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_people }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ party_size }}</b></td>
-  </tr>
-  {% endif %}
-  <tr>
-    <td style="padding:8px 0; color:#6b7280;">{{ t.label_when }}</td>
-    <td style="padding:8px 0; text-align:right;"><b>{{ when }}</b></td>
-  </tr>
-</table>
-<table cellpadding="0" cellspacing="0" style="margin: 24px 0;">
-  <tr>
-    <td style="background-color:#111827; border-radius:6px;">
-      <a href="{{ manage_url }}" style="display:inline-block; padding:12px 24px; color:#ffffff; text-decoration:none; font-size:14px;">
-        {{ t.button }}
-      </a>
-    </td>
-  </tr>
-</table>
-<p style="color:#6b7280; font-size:13px; line-height:1.6;">
-  {{ t.footer }}
-</p>
-<p style="color:#9ca3af; font-size:12px;">
-  {{ t.fallback }} {{ manage_url }}
-</p>
+{% extends "_booking_base.html" %}
+{% block preheader %}<div style="display:none; max-height:0; overflow:hidden;">{{ service_name }} · {{ date_text or "" }} {{ start_hm or when }}</div>{% endblock %}
+{% block content %}{% import "_ui.html" as ui %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="60" height="60" align="center" valign="middle" bgcolor="#1D1A3D" style="width:60px; height:60px; background:#1D1A3D; border:1px solid #3A3474; border-radius:999px; font-size:26px;">&#9200;</td></tr></table>
+</td></tr></table>
+<div style="height:16px;"></div>
+{{ ui.heading(t.named_reminder.replace("{name}", client_first_name) if client_first_name else t.heading, center=true) }}
+{{ ui.para(t.body, center=true) }}
+<div style="height:28px;"></div>
+{{ ui.panel_open() }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+{%- if day_number %}
+<div style="font-family:{{ ui.FONT }}; font-size:12px; font-weight:600; letter-spacing:0.08em; color:#B3A9FF; text-transform:uppercase;">{{ weekday }} · {{ date_text }}</div>
+<div style="margin-top:6px; font-family:{{ ui.MONO }}; font-size:44px; line-height:1.1; color:#FFFFFF;">{{ start_hm }}</div>
+{%- else %}
+<div style="font-family:{{ ui.MONO }}; font-size:24px; color:#FFFFFF;">{{ when }}</div>
+{%- endif %}
+<div style="margin-top:14px; font-family:{{ ui.FONT }}; font-size:14px; color:#D6D3F5;">{{ master_name }} · {{ service_name }}{% if duration_minutes %} · {{ duration_minutes }} {{ t.minutes }}{% endif %}{% if party_size and party_size > 1 %} · {{ t.label_people }}: {{ party_size }}{% endif %}</div>
+</td></tr></table>
+{{ ui.panel_close() }}
+<div style="height:24px;"></div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+{%- if calendar_url %}{{ ui.button(calendar_url, t.add_calendar) }}{% elif google_calendar_url %}{{ ui.button(google_calendar_url, t.add_calendar) }}{% endif %}
+{{ ui.button(manage_url, t.reschedule if (calendar_url or google_calendar_url) else t.button, "secondary" if (calendar_url or google_calendar_url) else "primary") }}
+{{ ui.button(manage_url, t.cant_make_it, "ghost") }}
+</td></tr></table>
+{{ ui.para(t.footer, center=true, size=13, color="#8A8DA6", top=8) }}
+{%- if cancel_hours %}{{ ui.para(t.free_cancel.replace("{hours}", cancel_hours|string), center=true, size=13, color="#8A8DA6", top=6) }}{% endif %}
+{%- if salon_address or salon_phone %}<div style="height:24px;"></div>{{ ui.salon_contacts(t, salon_address, salon_phone, maps_url) }}{% endif %}
+{{ ui.fallback(t.fallback, manage_url) }}
 {% endblock %}

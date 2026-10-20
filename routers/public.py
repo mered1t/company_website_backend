@@ -31,6 +31,7 @@ from services.booking import (
 
 from core.rate_limiter import limiter
 from services.email_service import safe_send, send_booking_confirmation_email
+from services.email_view import booking_links, booking_view
 from services.booking_tokens import create_token
 from services.billing import ensure_booking_enabled
 from services.notifications import notify_booking
@@ -240,15 +241,22 @@ async def public_create_booking(
     confirmation = None
     email_to = booking.client_email or client.email
     if email_to:
+        manage_token = await create_token(db, new_appointment.id, booking.language, email_to)
+        view = booking_view(
+            organization=org, appointment_id=new_appointment.id, start_time=start_time, end_time=end_time,
+            service_name=service.name, master_name=master.full_name, price=new_appointment.price,
+            currency=new_appointment.currency, client_name=booking.client_full_name, language=booking.language,
+        )
         confirmation = dict(
             to_email=email_to,
             organization_name=org.name,
             service_name=service.name,
             master_name=master.full_name,
             start_time=start_time,
-            manage_token=await create_token(db, new_appointment.id, booking.language, email_to),
+            manage_token=manage_token,
             language=booking.language,
             party_size=booking.party_size,
+            view=booking_links(view, manage_token),
         )
         confirmation_log = ("Failed to send booking confirmation (appointment_id=%s)", new_appointment.id)
 

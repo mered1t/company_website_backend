@@ -1,32 +1,15 @@
 {% extends "base_email.html" %}
-
-{% block content %}
-<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
-<p style="color:#374151; font-size:14px; line-height:1.6;">
-  {{ t.body }}
-</p>
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size:14px; color:#374151;">
-  <tr>
-    <td style="padding:8px 0; {% if days_left is not none %}border-bottom:1px solid #e5e7eb; {% endif %}color:#6b7280;">{{ t.label_date }}</td>
-    <td style="padding:8px 0; {% if days_left is not none %}border-bottom:1px solid #e5e7eb; {% endif %}text-align:right;"><b>{{ date_text }}</b></td>
-  </tr>
-  {% if days_left is not none %}
-  <tr>
-    <td style="padding:8px 0; color:#6b7280;">{{ t.label_days }}</td>
-    <td style="padding:8px 0; text-align:right;"><b>{{ days_left }}</b></td>
-  </tr>
-  {% endif %}
+{% block content %}{% import "_ui.html" as ui %}
+{{ ui.heading(t.heading) }}
+{{ ui.para(t.body) }}
+<div style="height:28px;"></div>
+{{ ui.panel_open() }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{{ ui.row(t.label_date, date_text, last=days_left is none, mono=true) }}
+{%- if days_left is not none %}{{ ui.row(t.label_days, days_left, last=true, mono=true) }}{% endif %}
 </table>
-<table cellpadding="0" cellspacing="0" style="margin: 24px 0;">
-  <tr>
-    <td style="background-color:#111827; border-radius:6px;">
-      <a href="{{ open_url }}" style="display:inline-block; padding:12px 24px; color:#ffffff; text-decoration:none; font-size:14px;">
-        {{ t.button }}
-      </a>
-    </td>
-  </tr>
-</table>
-<p style="color:#6b7280; font-size:13px; line-height:1.6;">
-  {{ t.footer }}
-</p>
+{{ ui.panel_close() }}
+<div style="height:24px;"></div>
+{{ ui.button(open_url, t.button) }}
+{{ ui.para(t.footer, size=13, color="#8A8DA6", top=6) }}
 {% endblock %}

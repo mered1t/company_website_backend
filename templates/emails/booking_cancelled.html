@@ -1,31 +1,28 @@
-{% extends "base_email.html" %}
-
-{% block content %}
-<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
-<p style="color:#374151; font-size:14px; line-height:1.6;">
-  {% if by_salon %}{{ t.body_salon }}{% else %}{{ t.body_client }}{% endif %}
-</p>
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size:14px; color:#374151;">
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_service }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ service_name }}</b></td>
-  </tr>
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_master }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ master_name }}</b></td>
-  </tr>
-  {% if party_size and party_size > 1 %}
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_people }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ party_size }}</b></td>
-  </tr>
-  {% endif %}
-  <tr>
-    <td style="padding:8px 0; color:#6b7280;">{{ t.label_when }}</td>
-    <td style="padding:8px 0; text-align:right;"><b>{{ when }}</b></td>
-  </tr>
+{% extends "_booking_base.html" %}
+{% block preheader %}<div style="display:none; max-height:0; overflow:hidden;">{{ service_name }} · {{ date_text or "" }} {{ start_hm or when }}</div>{% endblock %}
+{% block content %}{% import "_ui.html" as ui %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+{{ ui.badge(t.badge_cancelled, "grey") }}
+</td></tr></table>
+{{ ui.heading(t.heading, center=true) }}
+{{ ui.para(t.body_salon if by_salon else t.body_client, center=true) }}
+<div style="height:28px;"></div>
+{{ ui.panel_open(accent=false) }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{{ ui.row(t.label_when, (weekday|capitalize ~ ", " ~ date_text ~ " · " ~ start_hm) if day_number else when, mono=true, strike=true, dim=true) }}
+{{ ui.row(t.label_service, service_name, dim=true) }}
+{{ ui.row(t.label_master, master_name, dim=true, last=not (party_size and party_size > 1)) }}
+{%- if party_size and party_size > 1 %}{{ ui.row(t.label_people, party_size, dim=true, last=true) }}{% endif %}
 </table>
-<p style="color:#6b7280; font-size:13px; line-height:1.6;">
-  {{ t.footer }}
-</p>
+{{ ui.panel_close() }}
+{%- if book_again_url %}
+<div style="height:28px;"></div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+{{ ui.button(book_again_url, t.book_again) }}
+<div style="font-family:{{ ui.FONT }}; font-size:13px; color:#8A8DA6;">{{ t.book_again_hint }}</div>
+</td></tr></table>
+{%- endif %}
+<div style="height:8px;"></div>
+{{ ui.para(t.footer, center=true, size=13.5, top=20) }}
+{%- if salon_phone %}{{ ui.para(t.call_us.replace("{phone}", salon_phone), center=true, size=13, color="#8A8DA6", top=6) }}{% endif %}
 {% endblock %}

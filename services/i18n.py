@@ -656,13 +656,105 @@ def normalize_language(language: str | None) -> str:
     return language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
 
+# Общие подписи писем о записях (подтверждение, напоминание, перенос, отмена, лист ожидания).
+# {name}, {hours}, {phone} подставляет шаблон; {organization_name} и {app_name} — email_texts.
+BOOKING_UI: dict[str, dict[str, str]] = {
+    "en": {
+        "badge_confirmed": "Confirmed", "badge_changed": "Updated", "badge_cancelled": "Cancelled",
+        "label_booking": "Booking", "label_duration": "Duration", "label_price": "Price", "minutes": "min",
+        "add_calendar": "Add to calendar", "google_calendar": "Google Calendar", "reschedule": "Reschedule",
+        "cancel": "Cancel booking", "cant_make_it": "Can't make it",
+        "free_cancel": "Free cancellation up to {hours} h before the visit.", "directions": "Get directions",
+        "was": "Was", "now": "Now", "pick_time": "Pick another time", "book_again": "Book a new time",
+        "book_again_hint": "Takes under a minute online", "call_us": "Questions? Call us: {phone}",
+        "footer_reason": "You're receiving this email because you booked a visit at {organization_name}.",
+        "sent_via": "Sent via",
+        "named_confirmation": "You're booked, {name}", "named_reminder": "See you soon, {name}",
+    },
+    "pl": {
+        "badge_confirmed": "Potwierdzona", "badge_changed": "Zmieniona", "badge_cancelled": "Odwołana",
+        "label_booking": "Rezerwacja", "label_duration": "Czas trwania", "label_price": "Cena", "minutes": "min",
+        "add_calendar": "Dodaj do kalendarza", "google_calendar": "Kalendarz Google", "reschedule": "Przełóż",
+        "cancel": "Odwołaj wizytę", "cant_make_it": "Nie dam rady",
+        "free_cancel": "Bezpłatne odwołanie do {hours} godz. przed wizytą.", "directions": "Jak dojechać",
+        "was": "Było", "now": "Teraz", "pick_time": "Wybierz inny termin", "book_again": "Zarezerwuj nowy termin",
+        "book_again_hint": "Zajmie to mniej niż minutę", "call_us": "Pytania? Zadzwoń: {phone}",
+        "footer_reason": "Otrzymujesz tę wiadomość, ponieważ masz wizytę w {organization_name}.",
+        "sent_via": "Wysłano przez",
+        "named_confirmation": "{name}, Twoja wizyta jest potwierdzona", "named_reminder": "Do zobaczenia, {name}",
+    },
+    "es": {
+        "badge_confirmed": "Confirmada", "badge_changed": "Actualizada", "badge_cancelled": "Cancelada",
+        "label_booking": "Reserva", "label_duration": "Duración", "label_price": "Precio", "minutes": "min",
+        "add_calendar": "Añadir al calendario", "google_calendar": "Google Calendar", "reschedule": "Cambiar hora",
+        "cancel": "Cancelar cita", "cant_make_it": "No puedo ir",
+        "free_cancel": "Cancelación gratuita hasta {hours} h antes de la cita.", "directions": "Cómo llegar",
+        "was": "Antes", "now": "Ahora", "pick_time": "Elegir otra hora", "book_again": "Reservar otra cita",
+        "book_again_hint": "Lleva menos de un minuto", "call_us": "¿Dudas? Llámanos: {phone}",
+        "footer_reason": "Recibes este correo porque reservaste una cita en {organization_name}.",
+        "sent_via": "Enviado con",
+        "named_confirmation": "{name}, tu cita está confirmada", "named_reminder": "Hasta pronto, {name}",
+    },
+    "uk": {
+        "badge_confirmed": "Підтверджено", "badge_changed": "Змінено", "badge_cancelled": "Скасовано",
+        "label_booking": "Запис", "label_duration": "Тривалість", "label_price": "Ціна", "minutes": "хв",
+        "add_calendar": "Додати в календар", "google_calendar": "Google Календар", "reschedule": "Перенести",
+        "cancel": "Скасувати запис", "cant_make_it": "Не зможу прийти",
+        "free_cancel": "Безкоштовне скасування — до {hours} год до візиту.", "directions": "Як дістатися",
+        "was": "Було", "now": "Тепер", "pick_time": "Обрати інший час", "book_again": "Записатися знову",
+        "book_again_hint": "Це займе менше хвилини", "call_us": "Питання? Телефонуйте: {phone}",
+        "footer_reason": "Ви отримали цей лист, бо записалися до {organization_name}.",
+        "sent_via": "Надіслано через",
+        "named_confirmation": "{name}, ваш запис підтверджено", "named_reminder": "До зустрічі, {name}",
+    },
+    "sq": {
+        "badge_confirmed": "E konfirmuar", "badge_changed": "E ndryshuar", "badge_cancelled": "E anuluar",
+        "label_booking": "Rezervimi", "label_duration": "Kohëzgjatja", "label_price": "Çmimi", "minutes": "min",
+        "add_calendar": "Shto në kalendar", "google_calendar": "Google Calendar", "reschedule": "Ndrysho orarin",
+        "cancel": "Anulo rezervimin", "cant_make_it": "Nuk mund të vij",
+        "free_cancel": "Anulim falas deri {hours} orë para vizitës.", "directions": "Udhëzime",
+        "was": "Ishte", "now": "Tani", "pick_time": "Zgjidh një orë tjetër", "book_again": "Rezervo një orë të re",
+        "book_again_hint": "Zgjat më pak se një minutë", "call_us": "Pyetje? Na telefononi: {phone}",
+        "footer_reason": "E merr këtë email sepse ke rezervuar një vizitë te {organization_name}.",
+        "sent_via": "Dërguar përmes",
+        "named_confirmation": "{name}, rezervimi yt u konfirmua", "named_reminder": "Shihemi së shpejti, {name}",
+    },
+}
+
+# названия дней недели и месяцев для писем (понедельник = 0)
+WEEKDAYS: dict[str, tuple[str, ...]] = {
+    "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+    "pl": ("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"),
+    "es": ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
+    "uk": ("понеділок", "вівторок", "середа", "четвер", "пʼятниця", "субота", "неділя"),
+    "sq": ("e hënë", "e martë", "e mërkurë", "e enjte", "e premte", "e shtunë", "e diel"),
+}
+MONTHS_SHORT: dict[str, tuple[str, ...]] = {
+    "en": ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"),
+    "pl": ("STY", "LUT", "MAR", "KWI", "MAJ", "CZE", "LIP", "SIE", "WRZ", "PAŹ", "LIS", "GRU"),
+    "es": ("ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"),
+    "uk": ("СІЧ", "ЛЮТ", "БЕР", "КВІ", "ТРА", "ЧЕР", "ЛИП", "СЕР", "ВЕР", "ЖОВ", "ЛИС", "ГРУ"),
+    "sq": ("JAN", "SHK", "MAR", "PRI", "MAJ", "QER", "KOR", "GUS", "SHT", "TET", "NËN", "DHJ"),
+}
+
+BOOKING_TEMPLATES = ("booking_confirmation", "booking_reminder", "booking_changed", "booking_cancelled",
+                     "waitlist_slot_free")
+
+
+class _KeepUnknown(dict):
+    """Неизвестные {плейсхолдеры} остаются как есть: их подставит шаблон."""
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
 def email_texts(template_key: str, language: str | None, *, app_name: str, organization_name: str = "") -> dict[str, Markup]:
-    """Тексты письма для шаблона. Подставляемые значения экранируются (Markup.format)."""
-    strings = EMAIL_STRINGS[template_key][normalize_language(language)]
-    return {
-        key: Markup(value).format(app_name=app_name, organization_name=organization_name)
-        for key, value in strings.items()
-    }
+    """Тексты письма для шаблона. Подставляемые значения экранируются (Markup.format_map)."""
+    lang = normalize_language(language)
+    strings = dict(EMAIL_STRINGS[template_key][lang])
+    if template_key in BOOKING_TEMPLATES:
+        strings = {**BOOKING_UI[lang], **strings}
+    values = _KeepUnknown(app_name=app_name, organization_name=organization_name)
+    return {key: Markup(value).format_map(values) for key, value in strings.items()}
 
 
 def email_subject(template_key: str, language: str | None, *, organization_name: str = "") -> str:

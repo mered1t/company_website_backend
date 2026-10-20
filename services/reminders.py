@@ -28,6 +28,7 @@ import models
 from services.common import to_org_local
 from core.config import settings
 from services.email_service import send_booking_reminder_email
+from services.email_view import booking_links, booking_view
 from domain.enums import AppointmentStatus
 from services.booking_tokens import create_token, hash_token
 from core.time_utils import utc_now
@@ -52,6 +53,7 @@ class _Candidate:
     service_name: str
     master_name: str
     party_size: int = 1
+    view: dict | None = None
 
 
 async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candidate]:
@@ -134,6 +136,14 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
                 service_name=appointment.service.name,
                 master_name=appointment.master.full_name,
                 party_size=appointment.party_size,
+                view=booking_view(
+                    organization=appointment.organization, appointment_id=appointment.id,
+                    start_time=appointment.start_time, end_time=appointment.end_time,
+                    service_name=appointment.service.name, master_name=appointment.master.full_name,
+                    price=appointment.price, currency=appointment.currency,
+                    client_name=appointment.client.full_name if appointment.client.anonymized_at is None else None,
+                    language=language,
+                ),
             ))
     return candidates
 
@@ -183,6 +193,7 @@ async def send_due_reminders(db: AsyncSession) -> int:
                 manage_token=manage_token,
                 language=c.language,
                 party_size=c.party_size,
+                view=booking_links(c.view or {}, manage_token),
             )
         except Exception:
             logger.exception("Failed to send booking reminder (appointment_id=%s)", c.appointment_id)

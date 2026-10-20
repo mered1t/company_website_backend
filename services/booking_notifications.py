@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
+from services.email_view import booking_links, booking_view
 from services.email_service import safe_send, send_booking_cancelled_email, send_booking_changed_email
 from services.i18n import DEFAULT_LANGUAGE
 from services.booking_tokens import create_token
@@ -57,6 +58,21 @@ async def _recipient(db: AsyncSession, appointment: models.Appointment) -> tuple
     return client_email, organization.client_email_language or DEFAULT_LANGUAGE
 
 
+async def _view(db: AsyncSession, appointment: models.Appointment, language: str, manage_token: str | None) -> dict:
+    """Оформление письма: дата по-человечески, цена, адрес салона, ссылки «в календарь»."""
+    organization = await db.get(models.Organization, appointment.organization_id)
+    service = await db.get(models.Service, appointment.service_id)
+    master = await db.get(models.Master, appointment.master_id)
+    client = await db.get(models.Client, appointment.client_id)
+    view = booking_view(
+        organization=organization, appointment_id=appointment.id, start_time=appointment.start_time,
+        end_time=appointment.end_time, service_name=service.name if service else "",
+        master_name=master.full_name if master else "", price=appointment.price, currency=appointment.currency,
+        client_name=client.full_name if client and client.anonymized_at is None else None, language=language,
+    )
+    return booking_links(view, manage_token)
+
+
 async def _names(db: AsyncSession, appointment: models.Appointment) -> tuple[str, str, str]:
     service = await db.get(models.Service, appointment.service_id)
     master = await db.get(models.Master, appointment.master_id)
@@ -74,12 +90,13 @@ async def prepare_cancelled_email(
             return None
         email, language = recipient
         organization_name, service_name, master_name = await _names(db, appointment)
+        view = await _view(db, appointment, language, None)
     return Notification(
         send=send_booking_cancelled_email,
         kwargs=dict(
             to_email=email, organization_name=organization_name, service_name=service_name,
             master_name=master_name, start_time=appointment.start_time, by_salon=by_salon, language=language,
-            party_size=appointment.party_size,
+            party_size=appointment.party_size, view=view,
         ),
         log=("Failed to send booking cancellation email (appointment_id=%s)", appointment.id),
     )
@@ -100,12 +117,15 @@ async def prepare_changed_email(
         organization_name, service_name, master_name = await _names(db, appointment)
     # сырые токены нигде не хранятся, поэтому для новой ссылки нужен новый токен (старые ссылки тоже работают)
     manage_token = await create_token(db, appointment.id, language, email)
+    with db.no_autoflush:
+        view = await _view(db, appointment, language, manage_token)
     return Notification(
         send=send_booking_changed_email,
         kwargs=dict(
             to_email=email, organization_name=organization_name, service_name=service_name,
             master_name=master_name, start_time=appointment.start_time, manage_token=manage_token,
             old_start_time=old_start, by_salon=by_salon, language=language, party_size=appointment.party_size,
+            view=view,
         ),
         log=("Failed to send booking change email (appointment_id=%s)", appointment.id),
     )

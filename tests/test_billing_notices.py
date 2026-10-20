@@ -1,4 +1,5 @@
 """Письма владельцу о конце пробного периода и подписки."""
+import re
 import asyncio
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -376,4 +377,4 @@ def test_every_template_renders_in_every_language(key, lang):
     assert "Salon X" in html and "01.02.2030" in html
     assert texts["heading"] in html and texts["label_date"] in html and texts["label_days"] in html
     assert 'href="https://example.com/"' in html
-    assert "{" not in html and "}" not in html  # не осталось неподставленных значений
+    assert not re.search(r"\{[a-z_]+\}", html)  # не осталось неподставленных значений

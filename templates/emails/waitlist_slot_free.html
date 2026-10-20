@@ -1,33 +1,21 @@
 {% extends "base_email.html" %}
-
-{% block content %}
-<h2 style="color:#111827; margin-top:0;">{{ t.heading }}</h2>
-<p style="color:#374151; font-size:14px; line-height:1.6;">
-  {{ t.body }}
-</p>
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size:14px; color:#374151;">
-  <tr>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#6b7280;">{{ t.label_service }}</td>
-    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><b>{{ service_name }}</b></td>
-  </tr>
-  <tr>
-    <td style="padding:8px 0; color:#6b7280;">{{ t.label_date }}</td>
-    <td style="padding:8px 0; text-align:right;"><b>{{ day }}</b></td>
-  </tr>
+{% block header %}{% import "_ui.html" as ui %}{{ ui.salon_header(organization_name) }}{% endblock %}
+{% block content %}{% import "_ui.html" as ui %}
+{{ ui.badge(t.heading, "violet") }}
+{{ ui.heading(t.heading) }}
+{{ ui.para(t.body) }}
+<div style="height:28px;"></div>
+{{ ui.panel_open() }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{{ ui.row(t.label_service, service_name) }}
+{{ ui.row(t.label_date, day, last=true, mono=true) }}
 </table>
-<table cellpadding="0" cellspacing="0" style="margin: 24px 0;">
-  <tr>
-    <td style="background-color:#111827; border-radius:6px;">
-      <a href="{{ booking_url }}" style="display:inline-block; padding:12px 24px; color:#ffffff; text-decoration:none; font-size:14px;">
-        {{ t.button }}
-      </a>
-    </td>
-  </tr>
-</table>
-<p style="color:#6b7280; font-size:13px; line-height:1.6;">
-  {{ t.footer }}
-</p>
-<p style="color:#9ca3af; font-size:12px;">
-  {{ t.fallback }} {{ booking_url }}
-</p>
+{{ ui.panel_close() }}
+<div style="height:24px;"></div>
+{{ ui.button(booking_url, t.button) }}
+{{ ui.para(t.footer, size=13, color="#8A8DA6", top=6) }}
+{{ ui.fallback(t.fallback, booking_url) }}
+{% endblock %}
+{% block footer %}{% import "_ui.html" as ui %}
+<p style="margin:0; font-family:{{ ui.FONT }}; font-size:12px; color:#5F6279;"><span style="color:#6A5AF0;">&#9632;</span>&nbsp;{{ app_name }}</p>
 {% endblock %}

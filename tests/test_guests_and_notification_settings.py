@@ -1,4 +1,5 @@
 """Имена гостей в записи компании, число людей в письмах клиенту и выключатели колокольчика."""
+import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -107,6 +108,12 @@ async def test_anonymizing_the_client_erases_guest_names(api, db, org_a, court):
 
 
 # ------------------------------------------------------------------ число людей в письмах
+def _people(html: str, label: str, count: int) -> bool:
+    """Подпись и число рядом (в строке таблицы или «Подпись: N»), без учёта разметки."""
+    text = re.sub(r"<[^>]+>", " ", html)
+    return re.search(rf"{label}\s*:?\s*{count}\b", text) is not None
+
+
 def test_every_booking_email_has_the_people_label():
     for key in BOOKING_TEMPLATES:
         for language in SUPPORTED_LANGUAGES:
@@ -118,7 +125,7 @@ def test_people_row_only_for_a_party(template):
     common = dict(organization_name="Club", service_name="Tennis", master_name="Coach", when="01.01.2030 10:00",
                   manage_url="https://example.com/booking/x", by_salon=False, old_when=None)
     two = render_email(f"{template}.html", "uk", party_size=2, **common)
-    assert "Кількість людей" in two and "<b>2</b>" in two
+    assert _people(two, "Кількість людей", 2)
     one = render_email(f"{template}.html", "uk", party_size=1, **common)
     assert "Кількість людей" not in one
 
@@ -126,7 +133,7 @@ def test_people_row_only_for_a_party(template):
 async def test_confirmation_and_reminder_mention_the_party(api, db, org_a, court, sent_emails):
     r = await _public(api, org_a, court, party_size=3)
     assert r.status_code == 201, r.text
-    assert "People" in sent_emails[-1]["html"] and "<b>3</b>" in sent_emails[-1]["html"]
+    assert _people(sent_emails[-1]["html"], "People", 3)
     # напоминание по записи из CRM (у клиента есть email): компания из 3 человек в ближайшие 24 часа
     soon = (await get_org_now(db, org_a.org_id)).replace(minute=0, second=0, microsecond=0) + timedelta(hours=3)
     db.add(models.Appointment(
@@ -135,7 +142,7 @@ async def test_confirmation_and_reminder_mention_the_party(api, db, org_a, court
     await db.commit()
     sent_emails.clear()
     assert await send_due_reminders(db) == 1
-    assert sent_emails[0]["to"] == "player@example.com" and "<b>3</b>" in sent_emails[0]["html"]
+    assert sent_emails[0]["to"] == "player@example.com" and _people(sent_emails[0]["html"], "People", 3)
 
 
 # ------------------------------------------------------------------ выключатели колокольчика
