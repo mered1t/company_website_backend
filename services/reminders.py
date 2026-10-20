@@ -212,6 +212,80 @@ async def send_due_reminders(db: AsyncSession) -> int:
             await db.commit()
             continue
         sent += 1
+    return sent + await send_game_reminders(db, window)
+
+
+async def send_game_reminders(db: AsyncSession, window: timedelta) -> int:
+    """Напоминания участникам открытых игр (у каждого своя отметка reminded_start_time и своя ссылка «выйти»).
+
+    Кто присоединился уже внутри окна, только что получил письмо «вы в игре»: отмечаем без письма.
+    """
+    from services.game_notifications import participant_email  # здесь: game_notifications импортирует email_service
+
+    tz_names = (await db.execute(select(models.Organization.timezone).distinct())).scalars().all()
+    rows = []
+    for tz_name in tz_names:
+        try:
+            org_now = to_org_local(utc_now(), tz_name)
+        except ZoneInfoNotFoundError:
+            continue
+        result = await db.execute(
+            select(models.AppointmentParticipant.id, models.Appointment.start_time,
+                   models.AppointmentParticipant.created_at, models.Organization.timezone)
+            .join(models.Appointment, models.Appointment.id == models.AppointmentParticipant.appointment_id)
+            .join(models.Organization, models.Organization.id == models.Appointment.organization_id)
+            .where(
+                models.Organization.timezone == tz_name,
+                access_filter(),
+                models.AppointmentParticipant.left_at.is_(None),
+                models.Appointment.status == AppointmentStatus.scheduled,
+                models.Appointment.deleted_at.is_(None),
+                models.Appointment.open_capacity.is_not(None),
+                models.Appointment.start_time > org_now,
+                models.Appointment.start_time <= org_now + window,
+                models.AppointmentParticipant.reminded_start_time.is_distinct_from(models.Appointment.start_time),
+            )
+            .order_by(models.Appointment.start_time)
+            .limit(BATCH_LIMIT),
+        )
+        rows += result.all()
+    await db.rollback()
+
+    sent = 0
+    for participant_id, start_time, created_at, tz_name in rows:
+        claim = await db.execute(
+            update(models.AppointmentParticipant)
+            .where(models.AppointmentParticipant.id == participant_id,
+                   models.AppointmentParticipant.left_at.is_(None),
+                   models.AppointmentParticipant.reminded_start_time.is_distinct_from(start_time))
+            .values(reminded_start_time=start_time)
+            .execution_options(synchronize_session=False),
+        )
+        if claim.rowcount == 0:
+            await db.rollback()
+            continue
+        if to_org_local(created_at, tz_name) > start_time - window:  # вошёл в игру внутри окна
+            await db.commit()
+            continue
+        participant = await db.get(models.AppointmentParticipant, participant_id)
+        appointment = await db.get(models.Appointment, participant.appointment_id)
+        notification = await participant_email(db, appointment, participant, "reminder")
+        await db.commit()
+        if notification is None:
+            continue
+        try:
+            await asyncio.to_thread(notification.send, **notification.kwargs)
+        except Exception:
+            logger.exception("Failed to send game reminder (participant_id=%s)", participant_id)
+            await db.execute(
+                update(models.AppointmentParticipant)
+                .where(models.AppointmentParticipant.id == participant_id)
+                .values(reminded_start_time=None)
+                .execution_options(synchronize_session=False),
+            )
+            await db.commit()
+            continue
+        sent += 1
     return sent
 
 

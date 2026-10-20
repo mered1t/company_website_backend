@@ -266,3 +266,40 @@ def send_waitlist_slot_free_email(
             booking_url=booking_url,
         ),
     )
+
+
+def send_game_email(
+    to_email: str,
+    kind: str,
+    organization_name: str,
+    service_name: str,
+    master_name: str,
+    start_time: datetime,
+    players: int,
+    capacity: int,
+    manage_url: str | None = None,
+    player_name: str | None = None,
+    language: str | None = DEFAULT_LANGUAGE,
+    view: dict | None = None,
+) -> None:
+    """Письма об открытой игре (game_notice.html). kind: joined, reminder, changed, cancelled, removed —
+    участнику; player_joined, player_left — организатору. manage_url: участнику «выйти из игры», организатору
+    страница игры."""
+    _send(
+        to_email,
+        email_subject("game_notice", language, organization_name=organization_name, kind=kind),
+        render_email(
+            "game_notice.html",
+            language,
+            **(view or {}),
+            kind=kind,
+            organization_name=organization_name,
+            service_name=service_name,
+            master_name=master_name,
+            when=start_time.strftime("%d.%m.%Y %H:%M"),
+            players=players,
+            capacity=capacity,
+            manage_url=manage_url,
+            player_name=player_name,
+        ),
+    )

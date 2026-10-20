@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from core.time_utils import utc_now
-from domain.notifications import RETENTION_DAYS, NotificationType
+from domain.notifications import RETENTION_DAYS, SETTING_FOR_TYPE, NotificationType
 from domain.subscription import get_subscription
 
 
@@ -22,13 +22,15 @@ async def notify_booking(
     type_: NotificationType,
     *,
     old_start: datetime | None = None,
+    client_id: int | None = None,
 ) -> int:
     """Добавляет уведомления получателям (без коммита, коммитит вызывающий). Возвращает, сколько получателей."""
     with db.no_autoflush:  # правки записи ещё не сохранены
         organization = await db.get(models.Organization, appointment.organization_id)
         if organization is None or not get_subscription(organization).has_access:
             return 0
-        switch = getattr(models.Membership, f"notify_{type_.value}")  # сотрудник мог выключить этот тип
+        setting = SETTING_FOR_TYPE.get(type_, type_.value)
+        switch = getattr(models.Membership, f"notify_{setting}")  # сотрудник мог выключить этот тип
         user_ids = (await db.execute(
             select(models.Membership.user_id)
             .where(
@@ -56,7 +58,7 @@ async def notify_booking(
             user_id=user_id,
             type=type_.value,
             appointment_id=appointment.id,
-            client_id=appointment.client_id,
+            client_id=client_id or appointment.client_id,  # у игр — тот, кто вошёл или вышел
             service_name=service.name if service else "",
             master_name=master.full_name if master else "",
             start_time=appointment.start_time,

@@ -22,6 +22,13 @@ from core.time_utils import utc_now
 router = APIRouter()
 
 
+def _check_open_games(open_games: bool, max_party_size: int) -> None:
+    """Открытой игре нужно хотя бы два места."""
+    if open_games and max_party_size < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Open games need max_party_size of at least 2")
+
+
 @router.post("", response_model=ServicePublic, status_code=status.HTTP_201_CREATED)
 async def create_service(
     service: ServiceCreate,
@@ -29,6 +36,7 @@ async def create_service(
     current_user: CurrentUser,
     membership: ManagerMembership,
 ):
+    _check_open_games(service.open_games, service.max_party_size)
     new_service = models.Service(
         organization_id=membership.organization_id,
         **service.model_dump(),
@@ -99,6 +107,7 @@ async def update_service(
     update_data = only_changed(service, service_update.model_dump(exclude_unset=True))
     for field, value in update_data.items():
         setattr(service, field, value)
+    _check_open_games(service.open_games, service.max_party_size)
 
     if update_data:
         await log_activity(

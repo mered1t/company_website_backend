@@ -81,6 +81,11 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         select(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == organization_id)
         .order_by(models.WaitlistEntry.day, models.WaitlistEntry.id),
     )).scalars().all()
+    participants = (await db.execute(
+        select(models.AppointmentParticipant)
+        .where(models.AppointmentParticipant.organization_id == organization_id)
+        .order_by(models.AppointmentParticipant.id),
+    )).scalars().all()
 
     return {
         "format_version": EXPORT_FORMAT_VERSION,
@@ -112,7 +117,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             {
                 "id": s.id, "name": s.name, "price": s.price, "duration_minutes": s.duration_minutes,
                 "description": s.description, "emoji": s.emoji, "photo": s.photo,
-                "max_party_size": s.max_party_size,
+                "max_party_size": s.max_party_size, "open_games": s.open_games,
                 "created_at": s.created_at, "deleted_at": s.deleted_at,
             }
             for s in services
@@ -155,10 +160,18 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
                 "id": a.id, "client_id": a.client_id, "service_id": a.service_id, "master_id": a.master_id,
                 "start_time": a.start_time, "end_time": a.end_time, "status": a.status,
                 "price": a.price, "currency": a.currency, "notes": a.notes, "party_size": a.party_size,
-                "guest_names": a.guest_names, "series_id": a.series_id,
+                "guest_names": a.guest_names, "series_id": a.series_id, "open_capacity": a.open_capacity,
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments
+        ],
+        "game_participants": [
+            {
+                "id": p.id, "appointment_id": p.appointment_id, "client_id": p.client_id, "party_size": p.party_size,
+                "price": p.price, "email": p.email, "language": p.language, "created_at": p.created_at,
+                "left_at": p.left_at,
+            }
+            for p in participants
         ],
         "waitlist": [
             {
@@ -185,6 +198,7 @@ async def delete_organization_data(db: AsyncSession, organization_id: int) -> No
         delete(models.Notification).where(models.Notification.organization_id == organization_id),
         delete(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == organization_id),
         delete(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
+        delete(models.AppointmentParticipant).where(models.AppointmentParticipant.organization_id == organization_id),
         delete(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         delete(models.Appointment).where(models.Appointment.organization_id == organization_id),
         delete(models.MasterService).where(models.MasterService.master_id.in_(master_ids)),

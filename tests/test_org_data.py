@@ -16,6 +16,7 @@ ORG_TABLES = {
     "organizations", "memberships", "invitations", "services", "masters", "master_services", "working_hours",
     "time_off", "working_hours_exceptions", "clients", "client_comments", "appointments", "appointment_tokens",
     "activity_logs", "ai_reports", "notifications", "ai_chat_messages", "waitlist_entries",
+    "appointment_participants",
 }
 GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments"}
 
@@ -71,6 +72,9 @@ async def _populate(db, org, tag):
         models.AiChatMessage(organization_id=org.org_id, user_id=owner_id, status="done", model=f"{tag}-model"),
         models.WaitlistEntry(organization_id=org.org_id, service_id=service.id, day=datetime(2030, 3, 2).date(),
                              client_name=f"{tag}-waiter", phone="+380671112222", email=f"{tag}-wait@example.com"),
+        models.AppointmentParticipant(organization_id=org.org_id, appointment_id=appointment.id, client_id=client.id,
+                                      party_size=1, price=1500, email=f"{tag}-player@example.com",
+                                      token_nonce=f"{tag}-nonce", token_hash=f"{tag}-spot-hash"),
     ])
     await db.commit()
     return SimpleNamespace(owner_id=owner_id, service_id=service.id, master_id=master.id, client_id=client.id,
@@ -106,6 +110,7 @@ async def _counts(db, org_id):
         "notifications": select(func.count()).select_from(models.Notification).where(models.Notification.organization_id == org_id),
         "ai_chat_messages": select(func.count()).select_from(models.AiChatMessage).where(models.AiChatMessage.organization_id == org_id),
         "waitlist_entries": select(func.count()).select_from(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == org_id),
+        "appointment_participants": select(func.count()).select_from(models.AppointmentParticipant).where(models.AppointmentParticipant.organization_id == org_id),
         "appointment_tokens": select(func.count()).select_from(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
         "client_comments": select(func.count()).select_from(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         "master_services": select(func.count()).select_from(models.MasterService).where(models.MasterService.master_id.in_(master_ids)),

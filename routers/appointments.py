@@ -14,7 +14,8 @@ from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails,
-                             AppointmentSeriesCreate, AppointmentSeriesResult, SeriesCancelResult, SeriesConflict)
+                             AppointmentSeriesCreate, AppointmentSeriesResult, SeriesCancelResult, SeriesConflict,
+                             ParticipantPublic)
 
 from services.booking import (
     check_master_provides_service, check_party_size, check_slot_free,
@@ -29,7 +30,9 @@ from services.common import (get_owned, set_total_count, only_changed, changed_f
                              get_org_now)
 from core.time_utils import utc_now
 from domain.enums import AppointmentStatus
-from services.booking_notifications import dispatch, prepare_cancelled_email, prepare_changed_email
+from services.booking_notifications import dispatch, dispatch_many, prepare_cancelled_email, prepare_changed_email
+from services.game_notifications import participant_email, participants_emails
+from services.open_games import joined_seats, recalc_open_game, remove_participant, set_open_capacity
 from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_waitlist_emails
 
 router = APIRouter()
@@ -118,6 +121,8 @@ async def create_appointment(
         party_size=appointment.party_size,
         guest_names=appointment.guest_names,
     )
+    if appointment.open_capacity is not None:
+        set_open_capacity(new_appointment, service, appointment.open_capacity, joined=0)
 
     await log_activity(
         db, membership.organization_id, current_user.id,
@@ -169,6 +174,8 @@ async def create_appointment_series(
             party_size=body.party_size, guest_names=body.guest_names,
         )
         appointment.series_id = series_id
+        if body.open_capacity is not None:
+            set_open_capacity(appointment, service, body.open_capacity, joined=0)
         created.append(appointment)
 
     if skipped and not body.skip_conflicts:
@@ -216,8 +223,10 @@ async def cancel_appointment_series(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     future = [a for a in rows if a.status == AppointmentStatus.scheduled and a.start_time > org_now]
+    game_emails = []
     for appointment in future:
         appointment.status = AppointmentStatus.cancelled
+        game_emails += await participants_emails(db, appointment, "cancelled")  # открытые игры: письма игрокам
     if future:
         await log_activity(
             db, membership.organization_id, current_user.id,
@@ -228,6 +237,7 @@ async def cancel_appointment_series(
     waitlist_emails = await prepare_waitlist_emails(db, membership.organization_id, freed)
     await db.commit()
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
+    dispatch_many(background_tasks, game_emails)
     return SeriesCancelResult(cancelled=len(future))
 
 
@@ -330,6 +340,9 @@ async def update_appointment(
     update_data = appointment_update.model_dump(exclude_unset=True)
     notify_client = update_data.pop("notify_client", True)
     update_data = only_changed(appointment, update_data)  # форма целиком: учитываем только то, что поменялось
+    logged_fields = dict(update_data)
+    capacity_changed = "open_capacity" in update_data
+    new_capacity = update_data.pop("open_capacity", None)
     old_status, old_start = appointment.status, appointment.start_time
     old_master_id, old_service_id = appointment.master_id, appointment.service_id
 
@@ -434,21 +447,33 @@ async def update_appointment(
         await check_slot_free(db, appointment.master_id, appointment.start_time,
                                   appointment.end_time, exclude_id=appointment.id)
 
-    if update_data:
+    # открытая игра: открыть, закрыть, поменять число мест; цены за человека пересчитываются
+    if capacity_changed or (appointment.open_capacity and ({"party_size", "service_id"} & update_data.keys())):
+        current_service = new_service or await get_owned_active(
+            db, models.Service, appointment.service_id, membership.organization_id, "Service")
+        if capacity_changed:
+            set_open_capacity(appointment, current_service, new_capacity,
+                              joined=await joined_seats(db, appointment.id))
+        if appointment.open_capacity:
+            await recalc_open_game(db, appointment, current_service)
+
+    if logged_fields:
         await log_activity(
             db, membership.organization_id, current_user.id,
             action="updated", entity_type="appointment", entity_id=appointment_id,
-            details=changed_fields_details(update_data),
+            details=changed_fields_details(logged_fields),
         )
 
     # Письмо клиенту: будущую запись отменили или поменяли время, мастера, услугу.
     # Прошедшие записи и правка заметок/статуса письма не вызывают.
     notification = None
+    game_emails = []
     if old_status == AppointmentStatus.scheduled and notify_client:
         with db.no_autoflush:
             org_now = await get_org_now(db, membership.organization_id)
         if appointment.status == AppointmentStatus.cancelled and old_start > org_now:
             notification = await prepare_cancelled_email(db, appointment, by_salon=True)
+            game_emails = await participants_emails(db, appointment, "cancelled")
         elif (
             appointment.status == AppointmentStatus.scheduled
             and appointment.start_time > org_now
@@ -461,6 +486,7 @@ async def update_appointment(
                 old_start=old_start if appointment.start_time != old_start else None,
                 by_salon=True,
             )
+            game_emails = await participants_emails(db, appointment, "changed")
 
     # прежнее время освободилось (отмена, перенос, другой мастер или услуга): сообщить листу ожидания
     waitlist_emails = []
@@ -478,8 +504,82 @@ async def update_appointment(
     await persist(db, commit=True)
     await db.refresh(appointment)
     dispatch(background_tasks, notification)
+    dispatch_many(background_tasks, game_emails)
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return appointment
+
+
+# ------------------------------------------------------------------ открытые игры: участники
+async def _visible_appointment(db: AsyncSession, appointment_id: int, membership: models.Membership):
+    query = select(models.Appointment).where(
+        models.Appointment.id == appointment_id,
+        models.Appointment.organization_id == membership.organization_id,
+        models.Appointment.deleted_at.is_(None),
+    )
+    appointment = (await db.execute(_visible_to(query, membership))).scalars().first()
+    if not appointment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+    return appointment
+
+
+@router.get("/{appointment_id}/participants", response_model=list[ParticipantPublic])
+async def list_participants(
+    appointment_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+    include_left: bool = False,
+):
+    """Кто присоединился к открытой игре (организатор — клиент самой записи, его здесь нет)."""
+    await _visible_appointment(db, appointment_id, membership)
+    query = (
+        select(models.AppointmentParticipant, models.Client)
+        .join(models.Client, models.Client.id == models.AppointmentParticipant.client_id)
+        .where(models.AppointmentParticipant.appointment_id == appointment_id)
+        .order_by(models.AppointmentParticipant.id)
+    )
+    if not include_left:
+        query = query.where(models.AppointmentParticipant.left_at.is_(None))
+    return [
+        ParticipantPublic(
+            id=p.id, client_id=c.id, client_name=c.full_name, client_phone=c.phone, email=p.email or c.email,
+            party_size=p.party_size, price=p.price, created_at=p.created_at, left_at=p.left_at,
+        )
+        for p, c in (await db.execute(query)).all()
+    ]
+
+
+@router.delete("/{appointment_id}/participants/{participant_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_game_participant(
+    appointment_id: int,
+    participant_id: int,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+    notify_client: bool = True,
+):
+    """Убрать участника из открытой игры: место снова свободно, участнику уходит письмо (notify_client=false — без)."""
+    appointment = await _visible_appointment(db, appointment_id, membership)
+    participant = (await db.execute(
+        select(models.AppointmentParticipant).where(
+            models.AppointmentParticipant.id == participant_id,
+            models.AppointmentParticipant.appointment_id == appointment.id,
+            models.AppointmentParticipant.left_at.is_(None),
+        ),
+    )).scalars().first()
+    if participant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    remove_participant(appointment, participant)
+    await log_activity(
+        db, membership.organization_id, current_user.id,
+        action="updated", entity_type="appointment", entity_id=appointment.id,
+        details=f"Removed participant #{participant.id} from the open game",
+    )
+    notification = None
+    if notify_client and appointment.status == AppointmentStatus.scheduled:
+        notification = await participant_email(db, appointment, participant, "removed")
+    await db.commit()
+    dispatch(background_tasks, notification)
 
 
 @router.post("/{appointment_id}/restore", response_model=AppointmentPublic)

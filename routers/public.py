@@ -33,6 +33,7 @@ from core.rate_limiter import limiter
 from services.email_service import safe_send, send_booking_confirmation_email
 from services.email_view import booking_links, booking_view
 from services.booking_tokens import create_token
+from services.open_games import game_url, set_open_capacity, spots_left
 from services.billing import ensure_booking_enabled
 from services.notifications import notify_booking
 from domain.notifications import NotificationType
@@ -228,6 +229,8 @@ async def public_create_booking(
         party_size=booking.party_size,
         guest_names=booking.guest_names,
     )
+    if booking.open_capacity is not None:  # открытая игра: свободные места займут другие
+        set_open_capacity(new_appointment, service, booking.open_capacity, joined=0)
 
     await log_activity(
         db, org.id, None,
@@ -247,6 +250,9 @@ async def public_create_booking(
             service_name=service.name, master_name=master.full_name, price=new_appointment.price,
             currency=new_appointment.currency, client_name=booking.client_full_name, language=booking.language,
         )
+        if new_appointment.join_code:  # блок «поделитесь ссылкой» в письме организатору
+            view.update(join_url=game_url(org.slug, new_appointment.join_code),
+                        spots_left=spots_left(new_appointment))
         confirmation = dict(
             to_email=email_to,
             organization_name=org.name,
@@ -352,5 +358,7 @@ async def _opening_hours(db: AsyncSession, organization_id: int) -> list[Opening
 
 # управление записью по ссылке из письма (/public/booking/...)
 from routers.public_booking import router as _manage_router  # noqa: E402
+from routers.public_games import router as _games_router  # noqa: E402
 
 router.include_router(_manage_router)
+router.include_router(_games_router)  # открытые игры: /public/{slug}/games..., /public/participation/...

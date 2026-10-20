@@ -1,0 +1,39 @@
+{#- Письма об открытой игре. kind: joined, reminder, changed, cancelled, removed (участнику),
+    player_joined, player_left (организатору). Тексты: services/i18n_games.py -#}
+{% extends "_booking_base.html" %}
+{% block preheader %}<div style="display:none; max-height:0; overflow:hidden;">{{ service_name }} · {{ date_text or "" }} {{ start_hm or when }}</div>{% endblock %}
+{% block content %}{% import "_ui.html" as ui %}
+{%- set badge_color = {"joined": "green", "reminder": "violet", "changed": "amber", "cancelled": "grey", "removed": "grey",
+                       "player_joined": "green", "player_left": "amber"}[kind] %}
+{%- set gone = kind in ("cancelled", "removed") %}
+{%- set for_participant = kind in ("joined", "reminder", "changed") %}
+{{ ui.badge(t[kind ~ "_badge"], badge_color) }}
+{{ ui.heading(t[kind ~ "_heading"].replace("{name}", player_name or "")) }}
+{{ ui.para(t[kind ~ "_body"]) }}
+<div style="height:28px;"></div>
+{{ ui.panel_open(accent=not gone) }}
+{%- if day_number and not gone %}{{ ui.date_panel(month_short, day_number, weekday, time_range, service_name, date_text) }}{% endif %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:{% if day_number and not gone %}16{% else %}0{% endif %}px;{% if day_number and not gone %} border-top:1px solid #2A2C40;{% endif %}">
+{%- if not day_number or gone %}{{ ui.row(t.label_service, service_name, dim=gone, strike=gone) }}{{ ui.row(t.label_when, ((weekday ~ ", " ~ date_text ~ " · " ~ start_hm) if day_number else when), mono=true, dim=gone, strike=gone) }}{% endif %}
+{{ ui.row(t.label_master, master_name, dim=gone) }}
+{%- if capacity %}{{ ui.row(t.label_players, t.players_value.replace("{joined}", players|string).replace("{capacity}", capacity|string), last=not (price_text and for_participant), dim=gone) }}{% endif %}
+{%- if price_text and for_participant %}{{ ui.row(t.label_price_person, price_text, last=true, mono=true) }}{% endif %}
+</table>
+{{ ui.panel_close() }}
+<div style="height:24px;"></div>
+{%- if for_participant %}
+{%- if calendar_url %}{{ ui.button(calendar_url, t.add_calendar) }}{% elif google_calendar_url %}{{ ui.button(google_calendar_url, t.add_calendar) }}{% endif %}
+{%- if manage_url %}{{ ui.button(manage_url, t.leave, "ghost" if (calendar_url or google_calendar_url) else "secondary") }}{% endif %}
+{%- if calendar_url and google_calendar_url %}
+<p style="margin:0; font-family:{{ ui.FONT }}; font-size:13px; color:#8A8DA6;"><a href="{{ google_calendar_url }}" target="_blank" style="color:#B3A9FF; text-decoration:none;">{{ t.google_calendar }} &rarr;</a></p>
+{%- endif %}
+{{ ui.para(t.leave_hint, size=13, color="#8A8DA6", top=10) }}
+{%- elif kind in ("player_joined", "player_left") and manage_url %}
+{{ ui.button(manage_url, t.open_game) }}
+{%- elif gone and book_again_url %}
+{{ ui.button(book_again_url, t.book_again) }}
+{%- endif %}
+{%- if salon_phone and gone %}{{ ui.para(t.call_us.replace("{phone}", salon_phone), size=13, color="#8A8DA6", top=10) }}{% endif %}
+{%- if (salon_address or salon_phone) and not gone %}<div style="height:24px;"></div>{{ ui.salon_contacts(t, salon_address, salon_phone, maps_url) }}{% endif %}
+{%- if manage_url and (for_participant or kind in ("player_joined", "player_left")) %}{{ ui.fallback(t.fallback, manage_url) }}{% endif %}
+{% endblock %}

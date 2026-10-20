@@ -579,6 +579,12 @@ async def anonymize_client(
         .values(notes=None, guest_names=[])
         .execution_options(synchronize_session=False),
     )
+    await db.execute(  # открытые игры: адрес, оставленный при входе в игру
+        update(models.AppointmentParticipant)
+        .where(models.AppointmentParticipant.client_id == client_id)
+        .values(email=None)
+        .execution_options(synchronize_session=False),
+    )
 
     appointment_ids = select(models.Appointment.id).where(
         models.Appointment.client_id == client_id,

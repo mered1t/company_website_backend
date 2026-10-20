@@ -33,6 +33,11 @@ def dispatch(background_tasks: BackgroundTasks, notification: "Notification | No
         background_tasks.add_task(safe_send, notification.send, log=notification.log, **notification.kwargs)
 
 
+def dispatch_many(background_tasks: BackgroundTasks, notifications: "list[Notification]") -> None:
+    for notification in notifications:
+        dispatch(background_tasks, notification)
+
+
 async def _recipient(db: AsyncSession, appointment: models.Appointment) -> tuple[str, str] | None:
     """(email, язык) или None, если писать некуда."""
     client = await db.get(models.Client, appointment.client_id)

@@ -71,21 +71,31 @@ def booking_view(
     }
 
 
-def booking_links(view: dict, manage_token: str | None) -> dict:
-    """Добавляет ссылки, которым нужен токен записи: управление и «в календарь»."""
+def _with_calendar(view: dict, page_url: str, ics_path: str) -> dict:
     view = dict(view)
     cal = view.pop("_calendar", None)
-    if not manage_token:
-        return view
-    manage_url = f"{settings.frontend_url.rstrip('/')}/booking/{manage_token}"
     if cal:
         fmt = "%Y%m%dT%H%M%S"
         view["google_calendar_url"] = "https://calendar.google.com/calendar/render?" + urlencode({
             "action": "TEMPLATE", "text": cal["title"],
             "dates": f"{cal['start'].strftime(fmt)}/{cal['end'].strftime(fmt)}",
-            "ctz": cal["timezone"], "location": cal["location"], "details": manage_url,
+            "ctz": cal["timezone"], "location": cal["location"], "details": page_url,
         })
         if settings.backend_url:
-            view["calendar_url"] = (f"{settings.backend_url.rstrip('/')}/api/v1/public/booking/"
-                                    f"{manage_token}/calendar.ics")
+            view["calendar_url"] = f"{settings.backend_url.rstrip('/')}/api/v1/public/{ics_path}"
     return view
+
+
+def booking_links(view: dict, manage_token: str | None) -> dict:
+    """Добавляет ссылки, которым нужен токен записи: управление и «в календарь»."""
+    if not manage_token:
+        view = dict(view)
+        view.pop("_calendar", None)
+        return view
+    manage_url = f"{settings.frontend_url.rstrip('/')}/booking/{manage_token}"
+    return _with_calendar(view, manage_url, f"booking/{manage_token}/calendar.ics")
+
+
+def spot_links(view: dict, spot_token: str, spot_page: str) -> dict:
+    """То же для участника открытой игры: его ссылка «выйти из игры» и свой файл .ics."""
+    return _with_calendar(view, spot_page, f"participation/{spot_token}/calendar.ics")

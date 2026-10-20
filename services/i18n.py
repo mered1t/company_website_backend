@@ -737,8 +737,15 @@ MONTHS_SHORT: dict[str, tuple[str, ...]] = {
     "sq": ("JAN", "SHK", "MAR", "PRI", "MAJ", "QER", "KOR", "GUS", "SHT", "TET", "NËN", "DHJ"),
 }
 
+# открытые игры: свои письма и блок «поделиться ссылкой» в подтверждении организатору
+from services.i18n_games import GAME_SHARE_UI, GAME_STRINGS  # noqa: E402
+
+EMAIL_STRINGS["game_notice"] = GAME_STRINGS
+for _lang, _strings in GAME_SHARE_UI.items():
+    BOOKING_UI[_lang].update(_strings)
+
 BOOKING_TEMPLATES = ("booking_confirmation", "booking_reminder", "booking_changed", "booking_cancelled",
-                     "waitlist_slot_free")
+                     "waitlist_slot_free", "game_notice")
 
 
 class _KeepUnknown(dict):
@@ -757,7 +764,7 @@ def email_texts(template_key: str, language: str | None, *, app_name: str, organ
     return {key: Markup(value).format_map(values) for key, value in strings.items()}
 
 
-def email_subject(template_key: str, language: str | None, *, organization_name: str = "") -> str:
-    """Тема письма (обычный текст, без HTML)."""
-    raw = EMAIL_STRINGS[template_key][normalize_language(language)]["subject"]
+def email_subject(template_key: str, language: str | None, *, organization_name: str = "", kind: str = "") -> str:
+    """Тема письма (обычный текст, без HTML). kind — вид письма об открытой игре (ключ <kind>_subject)."""
+    raw = EMAIL_STRINGS[template_key][normalize_language(language)][f"{kind}_subject" if kind else "subject"]
     return raw.format(organization_name=organization_name)

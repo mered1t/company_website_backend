@@ -13,3 +13,4 @@ from models.models import Payment  # noqa: F401  (таблица платеже�
 from models.notification import Notification  # noqa: F401  (уведомления в CRM)
 from models.ai_chat import AiChatMessage  # noqa: F401  (счётчик ИИ-чата)
 from models.models import WaitlistEntry  # noqa: F401  (лист ожидания)
+from models.models import AppointmentParticipant  # noqa: F401  (открытые игры)

@@ -2,7 +2,7 @@ import unicodedata
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
 from services.i18n import Language
 
@@ -227,6 +227,8 @@ class ServiceBase(BaseModel):
     photo: str | None = None
     emoji: str | None = None
     max_party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # до скольких человек в одной записи
+    # открытые игры: свободные места в записи могут занять другие люди (нужно max_party_size от 2)
+    open_games: bool = False
 
 
 class ServiceCreate(ServiceBase):
@@ -242,9 +244,11 @@ class ServiceCreate(ServiceBase):
 
 
 class ServiceUpdate(PatchModel):
-    non_nullable: ClassVar[frozenset[str]] = frozenset({"name", "price", "duration_minutes", "max_party_size"})
+    non_nullable: ClassVar[frozenset[str]] = frozenset(
+        {"name", "price", "duration_minutes", "max_party_size", "open_games"})
     name: Name150 | None = None
     max_party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
+    open_games: bool | None = None
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
@@ -404,6 +408,8 @@ class AppointmentBase(BaseModel):
     notes: str | None = None
     party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт по этой записи
     guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)
+    # открытая игра: сколько всего людей может быть (свободные места занимают другие). None — запись закрытая
+    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
 
 
 def _check_guest_count(guest_names: list[str], party_size: int) -> None:
@@ -426,6 +432,8 @@ class AppointmentUpdate(PatchModel):
     )
     party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
     guest_names: list[GuestName] | None = Field(default=None, max_length=MAX_PARTY_SIZE - 1)
+    # число мест открытой игры; null — закрыть игру (если никто ещё не присоединился)
+    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
     # false: не писать клиенту об этом изменении или отмене (салон уже договорился по телефону).
     # Не поле записи: на напоминание по новому времени не влияет.
     notify_client: bool = True
@@ -447,6 +455,7 @@ class AppointmentPublic(AppointmentBase):
     price: int
     currency: str
     series_id: str | None = None
+    join_code: str | None = None  # открытая игра: код для ссылки /book/<slug>/game/<code>
     created_at: datetime
 
 
@@ -834,6 +843,8 @@ class PublicBookingRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
     party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт (не больше, чем у услуги)
     guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)  # без контактов
+    # открытая игра: сколько всего людей (вместе с компанией бронирующего); свободные места займут другие
+    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
     language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
     # Поле-ловушка для ботов: на странице оно скрыто, человек его не заполняет. Заполнено — запрос отклоняется.
     website: str | None = Field(default=None, max_length=200)
@@ -862,6 +873,8 @@ class BookingManageInfo(BaseModel):
     price: int
     currency: str
     party_size: int
+    open_capacity: int | None = None  # открытая игра: всего мест (party_size — сколько людей уже в игре)
+    join_code: str | None = None      # открытая игра: код для ссылки «присоединиться»
     organization_name: str
     organization_slug: str
     can_modify: bool  # можно ли ещё отменить или перенести
@@ -882,3 +895,57 @@ class AnalyticsDashboardResponse(BaseModel):
     top_clients: list[TopClientResponse]
     popular_services: list[PopularServiceResponse]
     masters: list[MasterWorkloadResponse]
+
+
+# ------------------------------------------------------------------ открытые игры
+class OpenGamePublic(BaseModel):
+    """Открытая игра на публичной странице салона. Имён и контактов игроков здесь нет — только сколько мест занято."""
+    code: str
+    service_id: int
+    service_name: str
+    master_id: int
+    master_name: str
+    start_time: datetime
+    end_time: datetime
+    capacity: int
+    players: int
+    spots_left: int
+    price_per_person: int
+    currency: str
+    can_join: bool  # игра ещё не началась, не отменена и есть места
+
+
+class JoinGameRequest(BaseModel):
+    client_full_name: Name150
+    client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
+    client_email: EmailStr | None = Field(default=None, max_length=120)
+    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сам человек и друзья, которых он берёт
+    language: Language | None = None
+    website: str | None = Field(default=None, max_length=200)  # поле-ловушка для ботов
+
+
+class GameSpotInfo(BaseModel):
+    """Место участника глазами самого участника (страница по ссылке из письма)."""
+    game: OpenGamePublic
+    status: Literal["joined", "left", "cancelled"]  # cancelled — игру отменили
+    party_size: int
+    price: int
+    organization_name: str
+    organization_slug: str
+    can_leave: bool
+    leave_deadline: datetime
+
+
+class ParticipantPublic(BaseModel):
+    """Участник открытой игры для CRM."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    client_id: int
+    client_name: str
+    client_phone: str
+    email: str | None
+    party_size: int
+    price: int
+    created_at: datetime
+    left_at: datetime | None
