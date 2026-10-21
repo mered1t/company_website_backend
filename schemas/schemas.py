@@ -181,6 +181,9 @@ class ClientPublic(ClientBase):
     created_at: datetime
     visits: int = 0  # сколько выполненных визитов
     last_visit: datetime | None = None  # начало последнего выполненного визита, местное время салона
+    # сумма выполненных визитов в минимальных единицах валюты салона; мастеру не показывается (null)
+    total_spent: int | None = 0
+    no_shows: int = 0  # сколько раз не пришёл
 
 
 class ClientsSummary(BaseModel):
@@ -494,7 +497,7 @@ class AppointmentWithDetails(AppointmentPublic):
 
 
 class OrganizationCreate(BaseModel):
-    name: str = Name150
+    name: Name150
     timezone: str | None = None
     currency: str | None = None
     # необязательный вопрос «чем вы занимаетесь?»: sports и studio сразу включают групповые записи
@@ -842,6 +845,10 @@ class AvailableSlot(BaseModel):
     end_time: datetime
 
 
+class CrmAvailableSlot(AvailableSlot):
+    master_ids: list[int]  # какие мастера свободны в это время
+
+
 class PublicBookingRequest(BaseModel):
     client_full_name: Name150
     client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
@@ -954,3 +961,60 @@ class ParticipantPublic(BaseModel):
     price: int
     created_at: datetime
     left_at: datetime | None
+
+
+# ------------------------------------------------------------------ стартовая страница CRM «Сегодня» и счётчики меню
+class TodaySummary(BaseModel):
+    total: int       # записей сегодня (без отменённых)
+    completed: int   # пришли
+    no_show: int     # не пришли
+    awaiting: int    # уже начались и всё ещё scheduled: ждут отметки
+    upcoming: int    # ещё не начались
+    cancelled: int   # отменены сегодня (в total не входят)
+    earned: int      # сумма выполненных, минимальные единицы валюты салона
+    expected: int    # сумма ещё не отмеченных (scheduled) — сколько ожидается
+
+
+class UnmarkedBlock(BaseModel):
+    total: int                              # всего неотмеченных записей прошлых дней (за UNMARKED_DAYS дней)
+    items: list[AppointmentWithDetails]     # первые 50, старые сначала
+
+
+class TomorrowBlock(BaseModel):
+    count: int                              # записей завтра (без отменённых)
+    items: list[AppointmentWithDetails]     # первые 50 по времени
+
+
+class TodayResponse(BaseModel):
+    date: date                               # сегодняшняя дата салона
+    today: list[AppointmentWithDetails]      # все записи дня (включая отменённые), по времени
+    summary: TodaySummary
+    tomorrow: TomorrowBlock
+    unmarked: UnmarkedBlock
+    birthdays: list[UpcomingBirthdayResponse] | None  # сегодня; мастеру — null (дни рождения видят владелец и админ)
+
+
+class MenuCounters(BaseModel):
+    today: int                 # записей сегодня без отменённых (мастеру — свои)
+    unmarked: int              # неотмеченных записей прошлых дней (как unmarked.total в /today)
+    clients: int
+    masters: int
+    services: int
+    waitlist: int | None       # заявки, которым письмо ещё не уходило; мастеру — null
+    notifications_unread: int
+
+
+class BulkStatusRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=100)
+    status: AppointmentStatus
+    notify_client: bool = True  # как в PATCH: false — без писем клиентам об отмене
+
+
+class BulkStatusFailure(BaseModel):
+    id: int
+    detail: str
+
+
+class BulkStatusResult(BaseModel):
+    updated: list[int]
+    failed: list[BulkStatusFailure]

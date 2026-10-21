@@ -15,7 +15,7 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails,
                              AppointmentSeriesCreate, AppointmentSeriesResult, SeriesCancelResult, SeriesConflict,
-                             ParticipantPublic)
+                             ParticipantPublic, BulkStatusRequest, BulkStatusResult, BulkStatusFailure)
 
 from services.booking import (
     check_master_provides_service, check_party_size, check_slot_free,
@@ -583,6 +583,38 @@ async def remove_game_participant(
         notification = await participant_email(db, appointment, participant, "removed")
     await db.commit()
     dispatch(background_tasks, notification)
+
+
+@router.post("/bulk-status", response_model=BulkStatusResult)
+async def bulk_set_status(
+    body: BulkStatusRequest,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+    membership: CurrentMembership,
+):
+    """Один статус сразу многим записям («Все пришли»). До 100 записей.
+
+    Каждая запись проходит те же проверки, что и PATCH (права мастера, «выполнена» только после начала, неявка
+    только после начала, письма клиенту при отмене). Ошибка одной записи не мешает остальным: она попадает в failed.
+    """
+    updated, failed = [], []
+    for appointment_id in dict.fromkeys(body.ids):  # без повторов, порядок сохраняется
+        try:
+            await update_appointment(
+                background_tasks, appointment_id,
+                AppointmentUpdate(status=body.status, notify_client=body.notify_client),
+                db, current_user, membership,
+            )
+            updated.append(appointment_id)
+        except HTTPException as error:
+            await db.rollback()
+            # откат сбрасывает загруженные объекты: перечитываем тех, кто нужен следующей записи
+            await db.refresh(membership)
+            await db.refresh(current_user)
+            detail = error.detail if isinstance(error.detail, str) else str(error.detail)
+            failed.append(BulkStatusFailure(id=appointment_id, detail=detail))
+    return BulkStatusResult(updated=updated, failed=failed)
 
 
 @router.post("/{appointment_id}/restore", response_model=AppointmentPublic)

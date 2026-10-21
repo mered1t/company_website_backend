@@ -189,11 +189,16 @@ async def get_birthdays(
     membership: ManagerMembership,
     days: int = Query(default=0, ge=0, le=60),
 ):
-    today = (await get_org_now(db, membership.organization_id)).date()
+    return await birthdays_within(db, membership.organization_id, days)
+
+
+async def birthdays_within(db: AsyncSession, organization_id: int, days: int) -> list[UpcomingBirthdayResponse]:
+    """Дни рождения клиентов салона в ближайшие days дней (0 — только сегодня), по местной дате салона."""
+    today = (await get_org_now(db, organization_id)).date()
 
     result = await db.execute(
         select(models.Client).where(
-            models.Client.organization_id == membership.organization_id,
+            models.Client.organization_id == organization_id,
             models.Client.deleted_at.is_(None),
             models.Client.birth_date.is_not(None),
         ),

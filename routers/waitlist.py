@@ -89,9 +89,19 @@ async def list_waitlist(
         query = query.where(models.WaitlistEntry.notified_at.is_(None))
     await set_total_count(response, db, query)
     rows = await db.execute(
-        query.order_by(models.WaitlistEntry.day, models.WaitlistEntry.id).offset(skip).limit(limit),
+        query.add_columns(models.Service.name, models.Master.full_name)
+        .join(models.Service, models.Service.id == models.WaitlistEntry.service_id)
+        .outerjoin(models.Master, models.Master.id == models.WaitlistEntry.master_id)
+        .order_by(models.WaitlistEntry.day, models.WaitlistEntry.id).offset(skip).limit(limit),
     )
-    return rows.scalars().all()
+    return [
+        WaitlistEntryPublic(
+            id=e.id, service_id=e.service_id, service_name=service_name, master_id=e.master_id,
+            master_name=master_name, day=e.day, client_name=e.client_name, phone=e.phone, email=e.email,
+            language=e.language, notified_at=e.notified_at, created_at=e.created_at,
+        )
+        for e, service_name, master_name in rows.all()
+    ]
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

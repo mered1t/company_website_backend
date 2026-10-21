@@ -127,7 +127,7 @@ async def list_clients(
 
     query = query.order_by(order.nulls_last(), tie).offset(skip).limit(limit)
     result = await db.execute(query)
-    return await with_visit_stats(db, result.scalars().all())
+    return await with_visit_stats(db, result.scalars().all(), membership)
 
 
 def _completed_visits():
@@ -146,16 +146,41 @@ def _completed_visits():
     )
 
 
-async def with_visit_stats(db: AsyncSession, clients):
-    """Добавляет к клиентам visits и last_visit одним запросом (для ответа API)."""
+def _client_stats():
+    """Всё для карточки клиента одним запросом: визиты, последний визит, потрачено, неявки."""
+    done = models.Appointment.status == AppointmentStatus.completed
+    return (
+        select(
+            models.Appointment.client_id.label("client_id"),
+            func.count(models.Appointment.id).filter(done).label("visits"),
+            func.max(models.Appointment.start_time).filter(done).label("last_visit"),
+            func.coalesce(func.sum(models.Appointment.price).filter(done), 0).label("total_spent"),
+            func.count(models.Appointment.id).filter(
+                models.Appointment.status == AppointmentStatus.no_show).label("no_shows"),
+        )
+        .where(models.Appointment.deleted_at.is_(None))
+        .group_by(models.Appointment.client_id)
+    )
+
+
+async def with_visit_stats(db: AsyncSession, clients, membership: models.Membership | None = None):
+    """Добавляет к клиентам visits, last_visit, total_spent и no_shows одним запросом (для ответа API).
+
+    total_spent — сумма выполненных визитов у всех мастеров, поэтому мастеру она не показывается (null).
+    """
     clients = list(clients)
     ids = [c.id for c in clients]
     stats = {}
     if ids:
-        rows = await db.execute(_completed_visits().where(models.Appointment.client_id.in_(ids)))
-        stats = {r.client_id: (r.visits, r.last_visit) for r in rows.all()}
+        rows = await db.execute(_client_stats().where(models.Appointment.client_id.in_(ids)))
+        stats = {r.client_id: r for r in rows.all()}
+    hide_money = membership is not None and membership.role == models.MembershipRole.master
     for client in clients:
-        client.visits, client.last_visit = stats.get(client.id, (0, None))
+        row = stats.get(client.id)
+        client.visits = row.visits if row else 0
+        client.last_visit = row.last_visit if row else None
+        client.no_shows = row.no_shows if row else 0
+        client.total_spent = None if hide_money else (int(row.total_spent) if row else 0)
     return clients
 
 
@@ -392,7 +417,7 @@ async def get_client(
     client = result.scalars().first()
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-    return (await with_visit_stats(db, [client]))[0]
+    return (await with_visit_stats(db, [client], membership))[0]
 
 
 @router.patch("/{client_id}", response_model=ClientPublic)
@@ -422,7 +447,7 @@ async def update_client(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A client with this phone number already exists")
     await db.refresh(client)
-    return (await with_visit_stats(db, [client]))[0]
+    return (await with_visit_stats(db, [client], membership))[0]
 
 
 @router.post("/{client_id}/restore", response_model=ClientPublic)
@@ -472,7 +497,7 @@ async def restore_client(
 
     await db.commit()
     await db.refresh(client)
-    return (await with_visit_stats(db, [client]))[0]
+    return (await with_visit_stats(db, [client], membership))[0]
 
 
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -626,9 +651,12 @@ async def get_client_appointments(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     status_filter: AppointmentStatus | None = None,
+    direction: Literal["asc", "desc"] = Query(default="desc", alias="dir",
+                                               description="desc (по умолчанию) — сначала новые"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ):
+    """История записей клиента. Порядок по времени начала: по умолчанию сначала новые (dir=desc)."""
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     query = (
@@ -650,7 +678,11 @@ async def get_client_appointments(
         query = query.where(models.Appointment.master_id == membership.master_id)
 
     await set_total_count(response, db, query)
-    query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc()).offset(skip).limit(limit)
+    if direction == "asc":
+        query = query.order_by(models.Appointment.start_time.asc(), models.Appointment.id.asc())
+    else:
+        query = query.order_by(models.Appointment.start_time.desc(), models.Appointment.id.desc())
+    query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 

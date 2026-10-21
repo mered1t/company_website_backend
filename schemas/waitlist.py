@@ -25,16 +25,18 @@ class WaitlistJoinResult(BaseModel):
 
 
 class WaitlistEntryPublic(BaseModel):
-    """Заявка в листе ожидания для CRM."""
+    """Заявка в листе ожидания для CRM (GET /organizations/{id}/waitlist)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     service_id: int
-    master_id: int | None
-    day: date
-    client_name: str
-    phone: str
-    email: str
-    language: str
-    notified_at: datetime | None
-    created_at: datetime
+    service_name: str = Field(description="Название услуги (у удалённой услуги — как было)")
+    master_id: int | None = Field(description="null — подойдёт любой мастер")
+    master_name: str | None = Field(description="null, если мастер не выбран")
+    day: date = Field(description="На какой день клиент ждёт время")
+    client_name: str = Field(description="Имя клиента из формы")
+    phone: str = Field(description="Телефон клиента, E.164")
+    email: str = Field(description="Email клиента: туда уходит письмо «освободилось время»")
+    language: str = Field(description="Язык письма: en, pl, es, uk, sq")
+    notified_at: datetime | None = Field(description="Когда ушло письмо (UTC); null — ещё не уходило")
+    created_at: datetime = Field(description="Когда клиент записался в лист ожидания (UTC)")
