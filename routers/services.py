@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +8,10 @@ import models
 from auth.auth import CurrentMembership, CurrentUser
 from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
-from schemas.schemas import ServiceCreate, ServicePublic, ServiceUpdate
+from schemas.schemas import (ServiceCreate, ServicePublic, ServiceTranslateRequest, ServiceTranslateResult,
+                             ServiceUpdate)
+from core.rate_limiter import limiter
+from services.translations import draft_translations
 
 from services.common import (get_owned, only_changed, changed_fields_details,
                              log_activity,
@@ -57,6 +60,20 @@ async def create_service(
     await db.commit()
     await db.refresh(new_service)
     return new_service
+
+
+@router.post("/translate", response_model=ServiceTranslateResult)
+@limiter.limit("30/hour")
+async def translate_service(
+    request: Request,
+    body: ServiceTranslateRequest,
+    membership: ManagerMembership,
+):
+    """Черновик переводов названия и описания через ИИ. Ничего не сохраняет: форма услуги показывает переводы,
+    салон правит и сохраняет их обычным POST/PATCH услуги (поле translations)."""
+    translations = await draft_translations(body.name, body.description, body.source_language,
+                                            body.target_languages)
+    return ServiceTranslateResult(translations=translations)
 
 
 @router.get("", response_model=list[ServicePublic])

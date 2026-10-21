@@ -92,6 +92,8 @@ class Service(Base):
     max_party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     # можно ли открыть запись на эту услугу для других людей («открытая игра»: свободные места занимают незнакомые)
     open_games: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    # переводы для публичной страницы: {"pl": {"name": "...", "description": "..."}, ...}
+    translations: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -214,6 +216,8 @@ class Appointment(Base):
     reminded_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     # True: клиент записался сам через публичную страницу; False: запись создал салон в CRM
     booked_online: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    # статус «выполнена» поставила автоотметка, а не сотрудник; сбрасывается при любой ручной смене статуса
+    auto_completed: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
 
     organization: Mapped["Organization"] = relationship(back_populates="appointments")
     client: Mapped["Client"] = relationship(back_populates="appointments")
@@ -282,6 +286,9 @@ class Organization(Base):
     billing_notice_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     # напоминания клиентам и по записям, созданным в CRM (у онлайн-записей напоминания есть всегда)
     staff_booking_reminders: Mapped[bool] = mapped_column(default=True, server_default="true", nullable=False)
+    # автоотметка «Пришёл» для прошедших записей: off / after_2h / end_of_day (services/auto_complete.py)
+    auto_complete: Mapped[str] = mapped_column(String(20), default="end_of_day", server_default="end_of_day",
+                                               nullable=False)
     # язык писем клиентам по записям из CRM: при онлайн-записи клиент выбирает язык сам
     client_email_language: Mapped[str] = mapped_column(String(5), default="en", server_default="en", nullable=False)
     # для публичной страницы записи (салон заполняет в настройках)

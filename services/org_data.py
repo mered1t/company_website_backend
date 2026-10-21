@@ -100,6 +100,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             "booking_horizon_days": org.booking_horizon_days,
             "business_type": org.business_type,
             "group_bookings": org.group_bookings,
+            "auto_complete": org.auto_complete,
             "plan": org.plan,
             "address": org.address,
             "phone": org.phone,
@@ -119,7 +120,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             {
                 "id": s.id, "name": s.name, "price": s.price, "duration_minutes": s.duration_minutes,
                 "description": s.description, "emoji": s.emoji, "photo": s.photo,
-                "max_party_size": s.max_party_size, "open_games": s.open_games,
+                "max_party_size": s.max_party_size, "open_games": s.open_games, "translations": s.translations,
                 "created_at": s.created_at, "deleted_at": s.deleted_at,
             }
             for s in services
@@ -163,6 +164,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
                 "start_time": a.start_time, "end_time": a.end_time, "status": a.status,
                 "price": a.price, "currency": a.currency, "notes": a.notes, "party_size": a.party_size,
                 "guest_names": a.guest_names, "series_id": a.series_id, "open_capacity": a.open_capacity,
+                "auto_completed": a.auto_completed,
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments

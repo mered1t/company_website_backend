@@ -36,6 +36,7 @@ from services.billing import access_filter
 from services.billing_notices import send_due_billing_notices
 from services.notifications import delete_old_notifications
 from services.cleanup import CLEANUP_INTERVAL, purge_old_rows
+from services.auto_complete import auto_complete_appointments
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +315,16 @@ async def reminder_loop(session_factory, interval_seconds: int, initial_delay: f
             raise
         except Exception:
             logger.exception("Billing notices check failed")
+        # автоотметка «Пришёл» для прошедших записей
+        try:
+            async with session_factory() as db:
+                marked = await auto_complete_appointments(db)
+            if marked:
+                logger.info("Auto-completed %s appointment(s)", marked)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Auto-complete failed")
         # уведомления в CRM хранятся 30 дней
         try:
             async with session_factory() as db:

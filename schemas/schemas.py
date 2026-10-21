@@ -223,6 +223,12 @@ class ClientImportResult(BaseModel):
 MAX_PARTY_SIZE = 50  # человек в одной записи
 
 
+class ServiceTranslation(BaseModel):
+    """Название и описание услуги на одном языке."""
+    name: Name150
+    description: str | None = Field(default=None, max_length=2000)
+
+
 class ServiceBase(BaseModel):
     name: Name150
     price: int = Field(ge=0, le=MAX_PRICE)
@@ -233,6 +239,8 @@ class ServiceBase(BaseModel):
     max_party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # до скольких человек в одной записи
     # открытые игры: свободные места в записи могут занять другие люди (нужно max_party_size от 2)
     open_games: bool = False
+    # переводы для публичной страницы записи по языкам интерфейса (en, pl, es, uk, sq); исходный текст — name/description
+    translations: dict[Language, ServiceTranslation] = Field(default_factory=dict)
 
 
 class ServiceCreate(ServiceBase):
@@ -249,8 +257,9 @@ class ServiceCreate(ServiceBase):
 
 class ServiceUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
-        {"name", "price", "duration_minutes", "max_party_size", "open_games"})
+        {"name", "price", "duration_minutes", "max_party_size", "open_games", "translations"})
     name: Name150 | None = None
+    translations: dict[Language, ServiceTranslation] | None = None  # заменяет все переводы; {} — удалить все
     max_party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
     open_games: bool | None = None
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
@@ -460,6 +469,7 @@ class AppointmentPublic(AppointmentBase):
     currency: str
     series_id: str | None = None
     join_code: str | None = None  # открытая игра: код для ссылки /book/<slug>/game/<code>
+    auto_completed: bool = False  # «выполнена» поставила автоотметка; салон может поправить на no_show
     created_at: datetime
 
 
@@ -518,8 +528,11 @@ class OrganizationCreate(BaseModel):
 class OrganizationUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
         {"name", "timezone", "booking_horizon_days", "slug", "currency",
-         "staff_booking_reminders", "client_email_language", "group_bookings"}
+         "staff_booking_reminders", "client_email_language", "group_bookings", "auto_complete"}
     )
+    # автоотметка «Пришёл»: off — выключена, after_2h — через 2 часа после конца записи,
+    # end_of_day — после конца дня записи по поясу салона (по умолчанию)
+    auto_complete: Literal["off", "after_2h", "end_of_day"] | None = None
     staff_booking_reminders: bool | None = None  # напоминать клиентам о записях, созданных в CRM
     business_type: BusinessType | None = None  # null очищает
     group_bookings: bool | None = None  # групповые записи и открытые игры
@@ -573,6 +586,7 @@ class OrganizationPublic(BaseModel):
     currency: str
     plan: str
     staff_booking_reminders: bool = True
+    auto_complete: str = "end_of_day"
     client_email_language: str = "en"
     business_type: BusinessType | None = None
     group_bookings: bool = False
@@ -1018,3 +1032,15 @@ class BulkStatusFailure(BaseModel):
 class BulkStatusResult(BaseModel):
     updated: list[int]
     failed: list[BulkStatusFailure]
+
+
+class ServiceTranslateRequest(BaseModel):
+    """Черновик переводов услуги через ИИ (ничего не сохраняет: салон правит и сохраняет через PATCH)."""
+    name: Name150
+    description: str | None = Field(default=None, max_length=2000)
+    source_language: Language | None = None   # на каком языке исходный текст; не указан — модель определит сама
+    target_languages: list[Language] | None = None  # по умолчанию все языки интерфейса, кроме исходного
+
+
+class ServiceTranslateResult(BaseModel):
+    translations: dict[Language, ServiceTranslation]

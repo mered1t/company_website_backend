@@ -33,6 +33,8 @@ from core.rate_limiter import limiter
 from services.email_service import safe_send, send_booking_confirmation_email
 from services.email_view import booking_links, booking_view
 from services.booking_tokens import create_token
+from services.i18n import Language
+from services.translations import localize
 from services.billing import ensure_booking_enabled
 from services.notifications import notify_booking
 from domain.notifications import NotificationType
@@ -58,7 +60,10 @@ async def get_organization_by_slug(slug: str, db: AsyncSession, *, require_booki
 
 @router.get("/{slug}/services", response_model=list[ServicePublic])
 @limiter.limit("30/minute")
-async def public_list_services(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
+async def public_list_services(
+    request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)], lang: Language | None = None,
+):
+    """lang — язык страницы: name и description на этом языке, если у услуги есть перевод, иначе исходные."""
     org = await get_organization_by_slug(slug, db)
     result = await db.execute(
         select(models.Service).where(
@@ -66,12 +71,14 @@ async def public_list_services(request: Request, slug: str, db: Annotated[AsyncS
             models.Service.deleted_at.is_(None),
         ),
     )
-    return result.scalars().all()
+    return [localize(ServicePublic.model_validate(s), s.translations, lang) for s in result.scalars().all()]
 
 
 @router.get("/{slug}/masters", response_model=list[MasterPublicInfo])
 @limiter.limit("30/minute")
-async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)]):
+async def public_list_masters(
+    request: Request, slug: str, db: Annotated[AsyncSession, Depends(get_db)], lang: Language | None = None,
+):
     org = await get_organization_by_slug(slug, db)
     result = await db.execute(
         select(models.Master)
@@ -81,7 +88,16 @@ async def public_list_masters(request: Request, slug: str, db: Annotated[AsyncSe
             models.Master.deleted_at.is_(None),
         ),
     )
-    return result.scalars().all()
+    masters = result.scalars().all()
+    if not lang:
+        return masters
+    out = []
+    for master in masters:
+        info = MasterPublicInfo.model_validate(master)
+        by_id = {s.id: s for s in master.services}
+        info.services = [localize(item, by_id[item.id].translations, lang) for item in info.services]
+        out.append(info)
+    return out
 
 
 @router.get("/{slug}/available-slots", response_model=list[AvailableSlot])

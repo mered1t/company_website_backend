@@ -413,6 +413,8 @@ async def update_appointment(
 
     for field, value in update_data.items():
         setattr(appointment, field, value)
+    if "status" in update_data:  # статус поставил человек: значок «отмечено автоматически» больше не нужен
+        appointment.auto_completed = False
 
     if appointment.start_time.tzinfo is not None:
         appointment.start_time = appointment.start_time.replace(tzinfo=None)
