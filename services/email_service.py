@@ -76,7 +76,10 @@ def send_invitation_email(to_email: str, organization_name: str, token: str, lan
 
 
 def send_password_reset_email(to_email: str, token: str, language: str | None = DEFAULT_LANGUAGE) -> None:
-    reset_url = _frontend_url(f"/reset-password?token={token}")
+    if settings.backend_url:  # страница «новый пароль» на самом бэкенде (routers/users.py)
+        reset_url = f"{settings.backend_url.rstrip('/')}/api/v1/users/reset-password?token={token}"
+    else:
+        reset_url = _frontend_url(f"/reset-password?token={token}")
     _send(
         to_email,
         email_subject("password_reset", language),

@@ -88,6 +88,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "You requested a password reset for your account.",
             "button": "Set a new password",
             "footer": "This link is valid for 30 minutes. If you didn't request a reset, just ignore this email: your password will stay the same.",
+            "fallback": "If the button doesn't work, copy this link:",
         },
         "pl": {
             "subject": "Resetowanie hasła",
@@ -95,6 +96,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Poprosiłeś(-aś) o zresetowanie hasła do swojego konta.",
             "button": "Ustaw nowe hasło",
             "footer": "Link jest ważny przez 30 minut. Jeśli nie prosiłeś(-aś) o reset, po prostu zignoruj tę wiadomość: hasło pozostanie bez zmian.",
+            "fallback": "Jeśli przycisk nie działa, skopiuj link:",
         },
         "es": {
             "subject": "Restablece tu contraseña",
@@ -102,6 +104,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Has solicitado restablecer la contraseña de tu cuenta.",
             "button": "Crear una nueva contraseña",
             "footer": "El enlace es válido durante 30 minutos. Si no lo solicitaste, ignora este correo: tu contraseña no cambiará.",
+            "fallback": "Si el botón no funciona, copia este enlace:",
         },
         "uk": {
             "subject": "Скидання пароля",
@@ -109,6 +112,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Ви надіслали запит на скидання пароля для вашого облікового запису.",
             "button": "Встановити новий пароль",
             "footer": "Посилання дійсне 30 хвилин. Якщо ви не надсилали запит, просто проігноруйте цей лист: пароль залишиться без змін.",
+            "fallback": "Якщо кнопка не працює, скопіюйте посилання:",
         },
         "sq": {
             "subject": "Rivendos fjalëkalimin",
@@ -116,6 +120,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Ke kërkuar rivendosjen e fjalëkalimit për llogarinë tënde.",
             "button": "Vendos fjalëkalim të ri",
             "footer": "Lidhja është e vlefshme për 30 minuta. Nëse nuk e ke kërkuar ti, thjesht injoroje këtë email: fjalëkalimi yt do të mbetet i njëjtë.",
+            "fallback": "Nëse butoni nuk funksionon, kopjo këtë lidhje:",
         },
     },
     "invitation": {
@@ -125,6 +130,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "You've been invited to join <b>{organization_name}</b> on {app_name}.",
             "button": "Accept invitation",
             "footer": "This link is valid for 7 days. If you weren't expecting this email, just ignore it.",
+            "fallback": "If the button doesn't work, copy this link:",
         },
         "pl": {
             "subject": "Zaproszenie do zespołu {organization_name}",
@@ -132,6 +138,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Zaproszono Cię do dołączenia do <b>{organization_name}</b> na platformie {app_name}.",
             "button": "Przyjmij zaproszenie",
             "footer": "Link jest ważny przez 7 dni. Jeśli nie spodziewałeś(-aś) się tej wiadomości, po prostu ją zignoruj.",
+            "fallback": "Jeśli przycisk nie działa, skopiuj link:",
         },
         "es": {
             "subject": "Te han invitado a unirte a {organization_name}",
@@ -139,6 +146,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Te han invitado a unirte a <b>{organization_name}</b> en {app_name}.",
             "button": "Aceptar invitación",
             "footer": "El enlace es válido durante 7 días. Si no esperabas este correo, simplemente ignóralo.",
+            "fallback": "Si el botón no funciona, copia este enlace:",
         },
         "uk": {
             "subject": "Вас запрошено до {organization_name}",
@@ -146,6 +154,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Вас запросили приєднатися до <b>{organization_name}</b> на платформі {app_name}.",
             "button": "Прийняти запрошення",
             "footer": "Посилання дійсне 7 днів. Якщо ви не очікували цей лист, просто проігноруйте його.",
+            "fallback": "Якщо кнопка не працює, скопіюйте посилання:",
         },
         "sq": {
             "subject": "Je ftuar të bashkohesh me {organization_name}",
@@ -153,6 +162,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "body": "Je ftuar të bashkohesh me <b>{organization_name}</b> në platformën {app_name}.",
             "button": "Prano ftesën",
             "footer": "Lidhja është e vlefshme për 7 ditë. Nëse nuk e prisje këtë email, thjesht injoroje.",
+            "fallback": "Nëse butoni nuk funksionon, kopjo këtë lidhje:",
         },
     },
     "booking_confirmation": {

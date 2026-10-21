@@ -30,7 +30,7 @@ from schemas.schemas import (
 
 from core.rate_limiter import limiter
 from core.config import settings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from services.account import OwnsOrganizationError, delete_user_account
 
 import secrets
@@ -224,11 +224,17 @@ async def reset_password(
     payload: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if not await _apply_password_reset(db, payload.token, payload.new_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+
+async def _apply_password_reset(db: AsyncSession, raw_token: str, new_password: str) -> bool:
+    """Ставит новый пароль по ссылке из письма. False — ссылка неизвестна, использована или истекла."""
     # «Занимаем» ссылку одним UPDATE: два одновременных запроса с одной ссылкой не пройдут оба
     claimed = await db.execute(
         update(models.PasswordResetToken)
         .where(
-            models.PasswordResetToken.token == hash_token(payload.token),
+            models.PasswordResetToken.token == hash_token(raw_token),
             models.PasswordResetToken.used.is_(False),
             models.PasswordResetToken.expires_at >= utc_now(),
         )
@@ -237,13 +243,15 @@ async def reset_password(
     )
     user_id = claimed.scalar_one_or_none()
     if user_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+        await db.rollback()
+        return False
 
     user = await db.get(models.User, user_id)
-    user.password_hash = await hash_password_async(payload.new_password)
+    user.password_hash = await hash_password_async(new_password)
     # Кто бы ни был залогинен со старым паролем, его выкидывает со всех устройств; другие ссылки сброса тоже гаснут
     await _end_all_sessions(db, user_id)
     await db.commit()
+    return True
 
 
 @router.post("/me/password", response_model=Token)
@@ -497,28 +505,59 @@ async def _token_language(db: AsyncSession, raw_token: str) -> str:
     return row if row in _VERIFY_TEXTS else "en"
 
 
+# Страницы по ссылкам из писем (подтверждение почты, новый пароль) — в том же тёмном стиле, что и письма.
+_PAGE_STYLE = """
+:root{color-scheme:dark}
+body{font-family:'Geist',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#0A0B10;margin:0;
+display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.card{background:#13141D;border:1px solid #23253A;border-radius:20px;padding:32px;max-width:420px;width:100%;
+box-sizing:border-box}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;color:#ECEDF5;font-weight:600;font-size:15px}
+.logo{width:28px;height:28px;border-radius:8px;background:#6A5AF0;color:#fff;display:flex;align-items:center;
+justify-content:center;font-weight:700;font-size:14px}
+h1{font-size:22px;line-height:1.3;color:#FFFFFF;margin:0 0 10px;font-weight:600}
+p{color:#A4A7BE;line-height:1.55;margin:0 0 24px;font-size:15px}
+label{display:block;color:#A4A7BE;font-size:13px;margin:0 0 6px}
+input[type=password]{width:100%;box-sizing:border-box;background:#0E0F17;border:1px solid #2A2C40;border-radius:10px;
+padding:12px 14px;color:#ECEDF5;font-size:15px;margin:0 0 16px;outline:none}
+input[type=password]:focus{border-color:#6A5AF0}
+.hint{font-size:13px;color:#7D8099;margin:-6px 0 20px}
+.error{background:#2A1620;border:1px solid #5A2735;color:#F3A7B5;border-radius:10px;padding:10px 12px;
+font-size:14px;margin:0 0 18px}
+button,.button{background:#6A5AF0;color:#fff;border:0;border-radius:12px;padding:13px 22px;font-size:15px;
+font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;width:100%;box-sizing:border-box;
+text-align:center}
+button:hover,.button:hover{background:#7B6CF5}
+"""
+
+
+def _page(language: str, title: str, body: str) -> HTMLResponse:
+    from html import escape
+    app = escape(settings.app_name)
+    html = f"""<!doctype html><html lang="{language}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>{escape(title)} · {app}</title><style>{_PAGE_STYLE}</style></head>
+<body><div class="card"><div class="brand"><span class="logo">{escape((settings.app_name or "C")[:1].upper())}</span>{app}</div>
+<h1>{escape(title)}</h1>{body}</div></body></html>"""
+    return HTMLResponse(html, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+def _go_to_app(language: str) -> str:
+    from html import escape
+    link = escape(settings.frontend_url.rstrip("/") + "/")
+    return f'<a class="button" href="{link}">{escape(_VERIFY_TEXTS[language][7].format(app=settings.app_name))}</a>'
+
+
 def _verify_page(language: str, title: str, text: str, *, form_action: str | None = None,
                  token: str | None = None, button: str | None = None) -> HTMLResponse:
     from html import escape
-    t = _VERIFY_TEXTS[language]
     if form_action:
         action = (f'<form method="post" action="{escape(form_action)}">'
                   f'<input type="hidden" name="token" value="{escape(token or "")}">'
                   f'<button type="submit">{escape(button or "")}</button></form>')
     else:
-        link = escape(settings.frontend_url.rstrip("/") + "/")
-        action = f'<a class="button" href="{link}">{escape(t[7].format(app=settings.app_name))}</a>'
-    html = f"""<!doctype html><html lang="{language}"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>{escape(title)} · {escape(settings.app_name)}</title>
-<style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;margin:0;
-display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}}
-.card{{background:#fff;border-radius:12px;padding:32px;max-width:420px;width:100%;box-shadow:0 1px 3px #0001;
-text-align:center}}h1{{font-size:20px;color:#111827;margin:0 0 12px}}p{{color:#4b5563;line-height:1.5;margin:0 0 24px}}
-button,.button{{background:#111827;color:#fff;border:0;border-radius:8px;padding:12px 24px;font-size:15px;
-cursor:pointer;text-decoration:none;display:inline-block}}</style></head>
-<body><div class="card"><h1>{escape(title)}</h1><p>{escape(text)}</p>{action}</div></body></html>"""
-    return HTMLResponse(html, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        action = _go_to_app(language)
+    return _page(language, title, f"<p>{escape(text)}</p>{action}")
 
 
 @router.get("/verify-email", response_class=HTMLResponse, include_in_schema=False)
@@ -579,3 +618,113 @@ async def resend_verification(
         )
 
     # Всегда одинаковый ответ, независимо от результата
+
+
+# ------------------------------------------------------------------ страница «новый пароль» для ссылки из письма
+# Как и подтверждение почты: GET показывает форму (ссылка сама ничего не меняет), пароль ставит только отправка формы.
+_RESET_TEXTS = {
+    "en": dict(title="Set a new password", text="Enter a new password for your account.", new="New password",
+               repeat="Repeat the password", hint="At least 8 characters, one capital letter and one digit.",
+               button="Save password", mismatch="The passwords don't match.",
+               weak="The password must be at least 8 characters and contain a capital letter and a digit.",
+               done_title="Password changed", done="Your new password is saved. You've been signed out on all devices — sign in with the new password.",
+               bad_title="Link is no longer valid", bad="This link has expired or was already used. Request a new one on the sign-in page."),
+    "pl": dict(title="Ustaw nowe hasło", text="Wpisz nowe hasło do swojego konta.", new="Nowe hasło",
+               repeat="Powtórz hasło", hint="Co najmniej 8 znaków, jedna wielka litera i jedna cyfra.",
+               button="Zapisz hasło", mismatch="Hasła nie są takie same.",
+               weak="Hasło musi mieć co najmniej 8 znaków, wielką literę i cyfrę.",
+               done_title="Hasło zmienione", done="Nowe hasło zostało zapisane. Wylogowaliśmy Cię ze wszystkich urządzeń — zaloguj się nowym hasłem.",
+               bad_title="Link jest nieaktualny", bad="Link wygasł lub został już użyty. Poproś o nowy na stronie logowania."),
+    "es": dict(title="Crea una nueva contraseña", text="Introduce una nueva contraseña para tu cuenta.",
+               new="Nueva contraseña", repeat="Repite la contraseña",
+               hint="Al menos 8 caracteres, una mayúscula y un número.", button="Guardar contraseña",
+               mismatch="Las contraseñas no coinciden.",
+               weak="La contraseña debe tener al menos 8 caracteres, una mayúscula y un número.",
+               done_title="Contraseña cambiada", done="Tu nueva contraseña está guardada. Hemos cerrado tu sesión en todos los dispositivos: entra con la nueva contraseña.",
+               bad_title="El enlace ya no es válido", bad="El enlace ha caducado o ya se usó. Solicita uno nuevo en la página de acceso."),
+    "uk": dict(title="Новий пароль", text="Введіть новий пароль для вашого акаунта.", new="Новий пароль",
+               repeat="Повторіть пароль", hint="Щонайменше 8 символів, одна велика літера й одна цифра.",
+               button="Зберегти пароль", mismatch="Паролі не збігаються.",
+               weak="Пароль має містити щонайменше 8 символів, велику літеру й цифру.",
+               done_title="Пароль змінено", done="Новий пароль збережено. Ми вийшли з акаунта на всіх пристроях — увійдіть з новим паролем.",
+               bad_title="Посилання недійсне", bad="Посилання застаріло або вже використане. Запросіть нове на сторінці входу."),
+    "sq": dict(title="Vendos një fjalëkalim të ri", text="Shkruaj një fjalëkalim të ri për llogarinë tënde.",
+               new="Fjalëkalimi i ri", repeat="Përsërit fjalëkalimin",
+               hint="Të paktën 8 karaktere, një shkronjë e madhe dhe një shifër.", button="Ruaj fjalëkalimin",
+               mismatch="Fjalëkalimet nuk përputhen.",
+               weak="Fjalëkalimi duhet të ketë të paktën 8 karaktere, një shkronjë të madhe dhe një shifër.",
+               done_title="Fjalëkalimi u ndryshua", done="Fjalëkalimi i ri u ruajt. Të kemi nxjerrë nga të gjitha pajisjet — hyr me fjalëkalimin e ri.",
+               bad_title="Lidhja nuk është më e vlefshme", bad="Lidhja ka skaduar ose është përdorur. Kërko një të re në faqen e hyrjes."),
+}
+
+
+async def _reset_link(db: AsyncSession, raw_token: str) -> tuple[bool, str]:
+    """(ссылка ещё действует, язык пользователя). Язык известен и у использованной ссылки — для текста ошибки."""
+    row = (await db.execute(
+        select(models.PasswordResetToken.used, models.PasswordResetToken.expires_at, models.User.language)
+        .join(models.User, models.User.id == models.PasswordResetToken.user_id)
+        .where(models.PasswordResetToken.token == hash_token(raw_token)),
+    )).first()
+    if row is None:
+        return False, "en"
+    language = row.language if row.language in _RESET_TEXTS else "en"
+    return (not row.used and row.expires_at >= utc_now()), language
+
+
+def _reset_form(language: str, action: str, token: str, error: str | None = None) -> HTMLResponse:
+    from html import escape
+    t = _RESET_TEXTS[language]
+    error_html = f'<div class="error">{escape(error)}</div>' if error else ""
+    body = f"""<p>{escape(t["text"])}</p>{error_html}
+<form method="post" action="{escape(action)}">
+<input type="hidden" name="token" value="{escape(token)}">
+<label for="p1">{escape(t["new"])}</label>
+<input id="p1" type="password" name="new_password" autocomplete="new-password" minlength="8" maxlength="128" required>
+<label for="p2">{escape(t["repeat"])}</label>
+<input id="p2" type="password" name="repeat_password" autocomplete="new-password" minlength="8" maxlength="128" required>
+<div class="hint">{escape(t["hint"])}</div>
+<button type="submit">{escape(t["button"])}</button></form>"""
+    return _page(language, t["title"], body)
+
+
+def _reset_result(language: str, ok: bool) -> HTMLResponse:
+    from html import escape
+    t = _RESET_TEXTS[language]
+    title, text = (t["done_title"], t["done"]) if ok else (t["bad_title"], t["bad"])
+    return _page(language, title, f"<p>{escape(text)}</p>{_go_to_app(language)}")
+
+
+@router.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit("30/minute")
+async def reset_password_page(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: str = Query(default="", max_length=200),
+):
+    """Страница по ссылке из письма «Сброс пароля»: форма нового пароля на языке пользователя."""
+    valid, language = await _reset_link(db, token)
+    if not valid:
+        return _reset_result(language, ok=False)
+    return _reset_form(language, f"{request.url.path}/confirm", token)
+
+
+@router.post("/reset-password/confirm", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit("10/minute")
+async def reset_password_confirm(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: Annotated[str, Form(max_length=200)] = "",
+    new_password: Annotated[str, Form(max_length=MAX_PASSWORD_LENGTH)] = "",
+    repeat_password: Annotated[str, Form(max_length=MAX_PASSWORD_LENGTH)] = "",
+):
+    valid, language = await _reset_link(db, token)
+    if not valid:
+        return _reset_result(language, ok=False)
+    t = _RESET_TEXTS[language]
+    if new_password != repeat_password:
+        return _reset_form(language, request.url.path, token, t["mismatch"])
+    try:  # те же правила пароля, что и у JSON-эндпоинта
+        ResetPasswordRequest(token=token, new_password=new_password)
+    except ValidationError:
+        return _reset_form(language, request.url.path, token, t["weak"])
+    return _reset_result(language, ok=await _apply_password_reset(db, token, new_password))
