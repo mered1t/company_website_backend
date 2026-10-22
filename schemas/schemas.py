@@ -153,6 +153,7 @@ class ClientBase(BaseModel):
 
 class ClientCreate(ClientBase):
     notes: str | None = Field(default=None, max_length=2000)
+    status_id: int | None = None  # статус из справочника салона (GET /client-statuses)
 
     @field_validator("birth_date")
     @classmethod
@@ -163,6 +164,7 @@ class ClientCreate(ClientBase):
 class ClientUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset({"full_name", "phone"})
     full_name: Name150 | None = None
+    status_id: int | None = None  # null — снять статус
     phone: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
     email: EmailStr | None = Field(default=None, max_length=120)
     birth_date: date | None = None
@@ -172,6 +174,46 @@ class ClientUpdate(PatchModel):
     @classmethod
     def check_birth_date(cls, v):
         return _validate_birth_date(v)
+
+
+StatusName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+class ClientStatusBrief(BaseModel):
+    """Статус в ответе о клиенте."""
+    id: int
+    name: str
+    color: str | None
+
+
+class ClientStatusPublic(ClientStatusBrief):
+    position: int
+    clients_count: int  # клиентов с этим статусом (без корзины)
+
+
+class ClientStatusCreate(BaseModel):
+    name: StatusName
+    color: HexColor | None = None
+
+
+class ClientStatusUpdate(PatchModel):
+    non_nullable: ClassVar[frozenset[str]] = frozenset({"name"})
+    name: StatusName | None = None
+    color: HexColor | None = None  # null — без цвета
+
+
+class ClientStatusOrder(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=100)  # все статусы салона в новом порядке
+
+
+class ClientBulkStatus(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+    status_id: int | None  # null — снять статус
+
+
+class ClientBulkStatusResult(BaseModel):
+    updated: int
 
 
 class ClientPublic(ClientBase):
@@ -184,6 +226,8 @@ class ClientPublic(ClientBase):
     # сумма выполненных визитов в минимальных единицах валюты салона; мастеру не показывается (null)
     total_spent: int | None = 0
     no_shows: int = 0  # сколько раз не пришёл
+    status_id: int | None = None
+    status: ClientStatusBrief | None = None
 
 
 class ClientsSummary(BaseModel):

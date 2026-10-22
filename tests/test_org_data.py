@@ -16,7 +16,7 @@ ORG_TABLES = {
     "organizations", "memberships", "invitations", "services", "masters", "master_services", "working_hours",
     "time_off", "working_hours_exceptions", "clients", "client_comments", "appointments", "appointment_tokens",
     "activity_logs", "ai_reports", "notifications", "ai_chat_messages", "waitlist_entries",
-    "appointment_participants",
+    "appointment_participants", "client_statuses",
 }
 GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments"}
 
@@ -111,6 +111,7 @@ async def _counts(db, org_id):
         "ai_chat_messages": select(func.count()).select_from(models.AiChatMessage).where(models.AiChatMessage.organization_id == org_id),
         "waitlist_entries": select(func.count()).select_from(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == org_id),
         "appointment_participants": select(func.count()).select_from(models.AppointmentParticipant).where(models.AppointmentParticipant.organization_id == org_id),
+        "client_statuses": select(func.count()).select_from(models.ClientStatus).where(models.ClientStatus.organization_id == org_id),
         "appointment_tokens": select(func.count()).select_from(models.AppointmentToken).where(models.AppointmentToken.appointment_id.in_(appointment_ids)),
         "client_comments": select(func.count()).select_from(models.ClientComment).where(models.ClientComment.client_id.in_(client_ids)),
         "master_services": select(func.count()).select_from(models.MasterService).where(models.MasterService.master_id.in_(master_ids)),

@@ -56,6 +56,10 @@ class Client(Base):
     email: Mapped[str | None] = mapped_column(String(120), nullable=True)
     birth_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # статус клиента из справочника салона (ставят сотрудники вручную); null — без статуса
+    status_id: Mapped[int | None] = mapped_column(
+        ForeignKey("client_statuses.id", ondelete="SET NULL"), nullable=True, index=True, default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
@@ -522,3 +526,18 @@ class AppointmentParticipant(Base):
 
     appointment: Mapped["Appointment"] = relationship()
     client: Mapped["Client"] = relationship()
+
+
+class ClientStatus(Base):
+    """Статус клиента — справочник салона («Постоянный», «VIP», свои). Ничего не ставится автоматически:
+    статус клиенту выбирают сотрудники. Новый салон получает набор по умолчанию (services/client_statuses.py)."""
+    __tablename__ = "client_statuses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True, default=None)  # #RRGGBB
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # порядок в списках и сортировке
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)

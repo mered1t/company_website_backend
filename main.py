@@ -15,6 +15,7 @@ from routers import notifications
 from routers import ai_chat
 from routers import waitlist
 from routers import schedule
+from routers import client_statuses
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -97,6 +98,9 @@ api_v1.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_v1.include_router(
     notifications.router, prefix="/organizations/{organization_id}/notifications", tags=["notifications"],
 )
+# справочник статусов клиентов салона
+api_v1.include_router(client_statuses.router, prefix="/organizations/{organization_id}/client-statuses",
+                      tags=["clients"])
 # свободное время для формы записи в CRM (без публичного лимита)
 api_v1.include_router(schedule.router, prefix="/organizations/{organization_id}", tags=["appointments"])
 # ИИ-чат тоже только в /api/v1

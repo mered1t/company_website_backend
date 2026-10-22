@@ -81,6 +81,10 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         select(models.WaitlistEntry).where(models.WaitlistEntry.organization_id == organization_id)
         .order_by(models.WaitlistEntry.day, models.WaitlistEntry.id),
     )).scalars().all()
+    client_statuses = (await db.execute(
+        select(models.ClientStatus).where(models.ClientStatus.organization_id == organization_id)
+        .order_by(models.ClientStatus.position, models.ClientStatus.id),
+    )).scalars().all()
     participants = (await db.execute(
         select(models.AppointmentParticipant)
         .where(models.AppointmentParticipant.organization_id == organization_id)
@@ -149,7 +153,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         "clients": [
             {
                 "id": c.id, "full_name": c.full_name, "phone": c.phone, "email": c.email,
-                "birth_date": c.birth_date, "notes": c.notes, "created_at": c.created_at,
+                "birth_date": c.birth_date, "notes": c.notes, "status_id": c.status_id, "created_at": c.created_at,
                 "deleted_at": c.deleted_at, "anonymized_at": c.anonymized_at,
                 "comments": [
                     {"content": comment.content, "author_username": username, "created_at": comment.created_at}
@@ -168,6 +172,10 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments
+        ],
+        "client_statuses": [
+            {"id": s.id, "name": s.name, "color": s.color, "position": s.position, "created_at": s.created_at}
+            for s in client_statuses
         ],
         "game_participants": [
             {
@@ -215,6 +223,7 @@ async def delete_organization_data(db: AsyncSession, organization_id: int) -> No
         delete(models.AiReport).where(models.AiReport.organization_id == organization_id),
         delete(models.AiChatMessage).where(models.AiChatMessage.organization_id == organization_id),
         delete(models.Client).where(models.Client.organization_id == organization_id),
+        delete(models.ClientStatus).where(models.ClientStatus.organization_id == organization_id),
         delete(models.Service).where(models.Service.organization_id == organization_id),
         delete(models.Master).where(models.Master.organization_id == organization_id),
         delete(models.Organization).where(models.Organization.id == organization_id),

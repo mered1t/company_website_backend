@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import models
 from auth.auth import AnyStatusMembership, OwnerMembership, OwnerMembershipAnyStatus, verify_password_async
 from schemas.billing import SubscriptionInfo
+from services.client_statuses import add_default_statuses
 from domain.business import GROUP_BY_DEFAULT
 from schemas.schemas import TransferOwnershipRequest
 from auth.auth import CurrentUser, CurrentMembership
@@ -94,6 +95,7 @@ async def create_organization(
         role=models.MembershipRole.owner,
     )
     db.add(membership)
+    add_default_statuses(db, new_org.id, current_user.language)  # статусы клиентов по умолчанию
 
     await log_activity(
         db, new_org.id, current_user.id,

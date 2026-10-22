@@ -27,7 +27,10 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientImportResult,
                              ClientCommentCreate,
                              ClientCommentPublic,
-                             ClientCommentUpdate)
+                             ClientCommentUpdate,
+                             ClientBulkStatus,
+                             ClientBulkStatusResult,
+                             ClientStatusBrief)
 
 from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
                              log_activity,
@@ -49,6 +52,8 @@ async def create_client(
     current_user: CurrentUser,
     membership: CurrentMembership,
 ):
+    if client.status_id is not None:
+        await _check_status(db, membership.organization_id, client.status_id)
     new_client = models.Client(
         organization_id=membership.organization_id,
         **client.model_dump(),
@@ -68,7 +73,14 @@ async def create_client(
 
     await db.commit()
     await db.refresh(new_client)
-    return new_client
+    return (await with_visit_stats(db, [new_client], membership))[0]
+
+
+async def _check_status(db: AsyncSession, organization_id: int, status_id: int) -> None:
+    """Статус должен быть из справочника этого салона."""
+    row = await db.get(models.ClientStatus, status_id)
+    if row is None or row.organization_id != organization_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown client status")
 
 
 @router.get("", response_model=list[ClientPublic])
@@ -77,7 +89,11 @@ async def list_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
     q: str | None = Query(default=None, max_length=100),
-    sort: Literal["name", "created_at", "last_visit", "visits"] = "name",
+    status_id: list[int] | None = Query(
+        default=None, max_length=30,
+        description="Один или несколько статусов (?status_id=1&status_id=2); 0 — клиенты без статуса",
+    ),
+    sort: Literal["name", "created_at", "last_visit", "visits", "status"] = "name",
     direction: Literal["asc", "desc"] = Query(default="asc", alias="dir"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
@@ -93,9 +109,24 @@ async def list_clients(
             models.Client.full_name.ilike(search_term, escape="\\") | models.Client.phone.ilike(search_term, escape="\\"),
         )
 
+    if status_id:
+        ids = [s for s in status_id if s != 0]
+        conditions = [models.Client.status_id.in_(ids)] if ids else []
+        if 0 in status_id:
+            conditions.append(models.Client.status_id.is_(None))
+        query = query.where(or_(*conditions))
+
     await set_total_count(response, db, query)
 
-    if sort == "last_visit":
+    if sort == "status":
+        # по порядку статусов в справочнике салона; клиенты без статуса — в конце
+        column = (
+            select(models.ClientStatus.position)
+            .where(models.ClientStatus.id == models.Client.status_id)
+            .correlate(models.Client)
+            .scalar_subquery()
+        )
+    elif sort == "last_visit":
         # последний состоявшийся визит; клиенты без визитов — всегда в конце списка
         column = (
             select(func.max(models.Appointment.start_time))
@@ -175,7 +206,13 @@ async def with_visit_stats(db: AsyncSession, clients, membership: models.Members
         rows = await db.execute(_client_stats().where(models.Appointment.client_id.in_(ids)))
         stats = {r.client_id: r for r in rows.all()}
     hide_money = membership is not None and membership.role == models.MembershipRole.master
+    status_ids = {c.status_id for c in clients if c.status_id}
+    statuses = {}
+    if status_ids:
+        statuses = {s.id: ClientStatusBrief(id=s.id, name=s.name, color=s.color) for s in (await db.execute(
+            select(models.ClientStatus).where(models.ClientStatus.id.in_(status_ids)))).scalars().all()}
     for client in clients:
+        client.status = statuses.get(client.status_id)
         row = stats.get(client.id)
         client.visits = row.visits if row else 0
         client.last_visit = row.last_visit if row else None
@@ -289,6 +326,14 @@ def _read_csv(raw: bytes) -> tuple[list[str], list[dict]]:
     return header, rows
 
 
+async def _status_names(db: AsyncSession, organization_id: int) -> dict[int, str]:
+    rows = (await db.execute(
+        select(models.ClientStatus.id, models.ClientStatus.name)
+        .where(models.ClientStatus.organization_id == organization_id),
+    )).all()
+    return dict(rows)
+
+
 @router.get("/export")
 async def export_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -301,11 +346,12 @@ async def export_clients(
         ).order_by(models.Client.id),
     )
     clients = result.scalars().all()
+    status_names = await _status_names(db, membership.organization_id)
 
     output = io.StringIO()
     output.write("\ufeff")  # BOM: без него Excel показывает кириллицу кракозябрами
     writer = csv.writer(output)
-    writer.writerow(["full_name", "phone", "email", "birth_date", "notes"])
+    writer.writerow(["full_name", "phone", "email", "birth_date", "notes", "status"])
     for c in clients:
         writer.writerow([
             _csv_safe(value)
@@ -315,6 +361,7 @@ async def export_clients(
                 c.email or "",
                 c.birth_date.date().isoformat() if c.birth_date else "",
                 c.notes or "",
+                status_names.get(c.status_id, ""),
             )
         ])
 
@@ -353,6 +400,8 @@ async def import_clients(
         ),
     )
     known_phones = set(existing_result.scalars().all())
+    # колонка status (необязательная): статус ищется по названию без учёта регистра, незнакомый — пропускается
+    status_by_name = {name.lower(): sid for sid, name in (await _status_names(db, membership.organization_id)).items()}
 
     skipped_duplicates = 0
     errors: list[ClientImportError] = []
@@ -376,6 +425,7 @@ async def import_clients(
             continue
 
         known_phones.add(client_data.phone)
+        client_data.status_id = status_by_name.get(_cell(row, "status").lower())
         new_clients.append(
             models.Client(organization_id=membership.organization_id, **client_data.model_dump()),
         )
@@ -399,6 +449,36 @@ async def import_clients(
     await db.commit()
 
     return ClientImportResult(created=created, skipped_duplicates=skipped_duplicates, errors=errors)
+
+
+@router.post("/bulk-status", response_model=ClientBulkStatusResult)
+async def bulk_set_client_status(
+    body: ClientBulkStatus,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: CurrentMembership,
+):
+    """Один статус сразу нескольким клиентам (до 500). status_id: null — снять статус. Чужие и удалённые клиенты
+    пропускаются; в ответе — сколько клиентов получили статус."""
+    if body.status_id is not None:
+        await _check_status(db, membership.organization_id, body.status_id)
+    result = await db.execute(
+        update(models.Client)
+        .where(
+            models.Client.id.in_(set(body.ids)),
+            models.Client.organization_id == membership.organization_id,
+            models.Client.deleted_at.is_(None),
+        )
+        .values(status_id=body.status_id)
+        .execution_options(synchronize_session=False),
+    )
+    if result.rowcount:
+        await log_activity(
+            db, membership.organization_id, membership.user_id,
+            action="updated", entity_type="client_status", entity_id=body.status_id or 0,
+            details=f"Set status for {result.rowcount} client(s)",
+        )
+    await db.commit()
+    return ClientBulkStatusResult(updated=result.rowcount)
 
 
 @router.get("/{client_id}", response_model=ClientPublic)
@@ -431,6 +511,8 @@ async def update_client(
     client = await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     update_data = only_changed(client, client_update.model_dump(exclude_unset=True))
+    if update_data.get("status_id") is not None:
+        await _check_status(db, membership.organization_id, update_data["status_id"])
     for field, value in update_data.items():
         setattr(client, field, value)
 
