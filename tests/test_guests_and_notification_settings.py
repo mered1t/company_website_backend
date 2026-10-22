@@ -1,10 +1,9 @@
-"""Имена гостей в записи компании, число людей в письмах клиенту и выключатели колокольчика."""
+"""Число людей в письмах клиенту и выключатели колокольчика."""
 import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
 
 import models
 from core.rate_limiter import limiter
@@ -56,53 +55,6 @@ async def _public(api, org, court, **body):
         "client_full_name": "Online", "client_phone": "+380671230099", "client_email": "online@example.com",
         "service_id": court.tennis, "master_id": court.coach, "start_time": _at(court.day, 10).isoformat(),
         **body})
-
-
-# ------------------------------------------------------------------ имена гостей
-async def test_guest_names_are_stored_and_trimmed(api, org_a, court):
-    r = await _crm(api, org_a, court, party_size=3, guest_names=["  Anna ", "Bob"])
-    assert r.status_code == 201, r.text
-    assert r.json()["guest_names"] == ["Anna", "Bob"]
-    plain = await _crm(api, org_a, court, start_time=_at(court.day, 12).isoformat())
-    assert plain.json()["guest_names"] == []
-
-
-async def test_guest_names_must_fit_the_party(api, org_a, court):
-    assert (await _crm(api, org_a, court, party_size=2, guest_names=["Anna", "Bob"])).status_code == 422
-    assert (await _crm(api, org_a, court, party_size=2, guest_names=[""])).status_code == 422
-    assert (await _crm(api, org_a, court, party_size=2, guest_names=["x" * 101])).status_code == 422
-    assert (await _public(api, org_a, court, party_size=1, guest_names=["Anna"])).status_code == 422
-
-
-async def test_patch_guest_names(api, org_a, court):
-    appointment = (await _crm(api, org_a, court, party_size=3, guest_names=["Anna"])).json()["id"]
-    url = f"{org_a.base}/appointments/{appointment}"
-    r = await api.patch(url, headers=org_a.headers, json={"guest_names": ["Anna", "Bob"]})
-    assert r.status_code == 200 and r.json()["guest_names"] == ["Anna", "Bob"]
-    assert (await api.patch(url, headers=org_a.headers, json={"party_size": 2})).status_code == 400
-    r = await api.patch(url, headers=org_a.headers, json={"party_size": 1, "guest_names": []})
-    assert r.status_code == 200 and r.json()["guest_names"] == []
-    assert (await api.patch(url, headers=org_a.headers, json={"guest_names": None})).status_code == 422
-
-
-async def test_public_booking_has_no_guests(api, org_a, court):
-    assert (await _public(api, org_a, court, party_size=2, guest_names=["Friend"])).status_code == 422
-
-
-async def test_anonymizing_the_client_erases_guest_names(api, db, org_a, court):
-    past = (await get_org_now(db, org_a.org_id)).replace(minute=0, second=0, microsecond=0) - timedelta(days=5)
-    appointment = models.Appointment(
-        organization_id=org_a.org_id, client_id=court.client, service_id=court.tennis, master_id=court.coach,
-        start_time=past, end_time=past + timedelta(hours=1), status="completed", price=4000, currency="EUR",
-        party_size=2, guest_names=["Anna"])
-    db.add(appointment)
-    await db.commit()
-    appointment_id = appointment.id
-    r = await api.post(f"{org_a.base}/clients/{court.client}/anonymize", headers=org_a.headers)
-    assert r.status_code == 204, r.text
-    db.expire_all()
-    row = (await db.execute(select(models.Appointment).where(models.Appointment.id == appointment_id))).scalar_one()
-    assert row.guest_names == []
 
 
 # ------------------------------------------------------------------ число людей в письмах

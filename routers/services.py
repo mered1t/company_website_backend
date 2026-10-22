@@ -27,13 +27,6 @@ from services.booking import ensure_group_bookings  # noqa: E402
 router = APIRouter()
 
 
-def _check_open_games(open_games: bool, max_party_size: int) -> None:
-    """Открытой игре нужно хотя бы два места."""
-    if open_games and max_party_size < 2:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Open games need max_party_size of at least 2")
-
-
 @router.post("", response_model=ServicePublic, status_code=status.HTTP_201_CREATED)
 async def create_service(
     service: ServiceCreate,
@@ -41,8 +34,7 @@ async def create_service(
     current_user: CurrentUser,
     membership: ManagerMembership,
 ):
-    _check_open_games(service.open_games, service.max_party_size)
-    if service.max_party_size > 1 or service.open_games:
+    if service.max_party_size > 1:
         await ensure_group_bookings(db, membership.organization_id)
     new_service = models.Service(
         organization_id=membership.organization_id,
@@ -126,11 +118,10 @@ async def update_service(
     service = await get_owned_active(db, models.Service, service_id, membership.organization_id, "Service")
 
     update_data = only_changed(service, service_update.model_dump(exclude_unset=True))
-    if update_data.get("max_party_size", 1) > 1 or update_data.get("open_games"):
+    if update_data.get("max_party_size", 1) > 1:
         await ensure_group_bookings(db, membership.organization_id)
     for field, value in update_data.items():
         setattr(service, field, value)
-    _check_open_games(service.open_games, service.max_party_size)
 
     if update_data:
         await log_activity(

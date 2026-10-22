@@ -96,6 +96,9 @@ def booking_links(view: dict, manage_token: str | None) -> dict:
     return _with_calendar(view, manage_url, f"booking/{manage_token}/calendar.ics")
 
 
-def spot_links(view: dict, spot_token: str, spot_page: str) -> dict:
-    """То же для участника открытой игры: его ссылка «выйти из игры» и свой файл .ics."""
-    return _with_calendar(view, spot_page, f"participation/{spot_token}/calendar.ics")
+def guest_links(view: dict) -> dict:
+    """Для участника чужой записи: только «добавить в Google Календарь», без ссылки управления записью и без .ics
+    (управляет записью тот, кто записан основным клиентом, или салон)."""
+    view = _with_calendar(view, view.get("book_again_url", ""), "")
+    view.pop("calendar_url", None)
+    return view

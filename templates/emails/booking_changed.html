@@ -3,7 +3,7 @@
 {% block content %}{% import "_ui.html" as ui %}
 {{ ui.badge(t.badge_changed, "amber") }}
 {{ ui.heading(t.heading) }}
-{{ ui.para(t.body_salon if by_salon else t.body_client) }}
+{{ ui.para(t.body_guest if as_guest else (t.body_salon if by_salon else t.body_client)) }}
 <div style="height:28px;"></div>
 {%- if old_when %}
 {{ ui.panel_open(accent=false) }}
@@ -29,8 +29,8 @@
 {{ ui.panel_close() }}
 <div style="height:24px;"></div>
 {%- if calendar_url %}{{ ui.button(calendar_url, t.add_calendar) }}{% elif google_calendar_url %}{{ ui.button(google_calendar_url, t.add_calendar) }}{% endif %}
-{{ ui.button(manage_url, t.pick_time if (calendar_url or google_calendar_url) else t.button, "secondary" if (calendar_url or google_calendar_url) else "primary") }}
-{{ ui.para(t.footer, size=13, color="#8A8DA6", top=6) }}
+{%- if manage_url %}{{ ui.button(manage_url, t.pick_time if (calendar_url or google_calendar_url) else t.button, "secondary" if (calendar_url or google_calendar_url) else "primary") }}{% endif %}
+{{ ui.para(t.footer_guest if as_guest else t.footer, size=13, color="#8A8DA6", top=6) }}
 {%- if salon_phone %}{{ ui.para(t.call_us.replace("{phone}", salon_phone), size=13, color="#8A8DA6", top=6) }}{% endif %}
-{{ ui.fallback(t.fallback, manage_url) }}
+{%- if manage_url %}{{ ui.fallback(t.fallback, manage_url) }}{% endif %}
 {% endblock %}

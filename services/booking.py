@@ -23,7 +23,7 @@ MASTER_BUSY = "Master already has an appointment at this time"
 
 
 async def ensure_group_bookings(db: AsyncSession, organization_id: int) -> None:
-    """Компании, гости и открытые игры — только если у салона включены групповые записи."""
+    """Несколько клиентов в одной записи — только если у салона включены групповые записи."""
     with db.no_autoflush:
         organization = await db.get(models.Organization, organization_id)
     if organization is None or not organization.group_bookings:
@@ -132,13 +132,12 @@ async def create_appointment_record(
     end_time: datetime,
     notes: str | None = None,
     booked_online: bool = False,
-    party_size: int = 1,
-    guest_names: list[str] | None = None,
+    participants: list[models.Client] | None = None,
 ) -> models.Appointment:
-    """Создаёт запись со снимком цены и валюты. Единственное место, где это делается."""
-    check_party_size(service, party_size)
-    if party_size > 1 or guest_names:
-        await ensure_group_bookings(db, organization_id)
+    """Создаёт запись со снимком цены и валюты. Единственное место, где это делается.
+
+    participants — остальные клиенты записи (уже проверенные load_participants).
+    """
     currency = await get_org_currency(db, organization_id)
     appointment = models.Appointment(
         organization_id=organization_id,
@@ -151,12 +150,53 @@ async def create_appointment_record(
         currency=currency,
         notes=notes,
         booked_online=booked_online,
-        party_size=party_size,
-        guest_names=list(guest_names or []),
     )
+    if participants:
+        set_participants(appointment, service, participants)
     db.add(appointment)
     await persist(db, commit=False)
     return appointment
+
+
+# ------------------------------------------------------------------ несколько клиентов в одной записи
+async def load_participants(
+    db: AsyncSession, organization_id: int, service: models.Service, main_client_id: int, client_ids: list[int],
+) -> list[models.Client]:
+    """Карточки остальных клиентов записи по id: свои, не удалённые, без повторов и без основного клиента.
+
+    Непустой список можно только при включённых групповых записях и если все помещаются в услугу.
+    """
+    client_ids = list(dict.fromkeys(client_ids))
+    if not client_ids:
+        return []
+    if main_client_id in client_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The main client of the appointment is already in it")
+    await ensure_group_bookings(db, organization_id)
+    check_party_size(service, 1 + len(client_ids))
+    with db.no_autoflush:
+        return [await get_owned_active(db, models.Client, client_id, organization_id, "Client")
+                for client_id in client_ids]
+
+
+def set_participants(appointment: models.Appointment, service: models.Service, clients: list[models.Client]) -> None:
+    """Новый список остальных клиентов записи (без коммита). Те, кто уже был в записи, остаются как есть."""
+    current = {p.client_id: p for p in appointment.participants}
+    appointment.participants = [
+        current.get(client.id) or models.AppointmentParticipant(
+            organization_id=appointment.organization_id, client_id=client.id, price=service.price, client=client,
+        )
+        for client in clients
+    ]
+    reprice(appointment, service)
+
+
+def reprice(appointment: models.Appointment, service: models.Service) -> None:
+    """Цена за человека: у каждого клиента своя часть, у записи — сумма за всех."""
+    appointment.party_size = 1 + len(appointment.participants)
+    for participant in appointment.participants:
+        participant.price = service.price
+    appointment.price = service.price * appointment.party_size
 
 
 SLOT_STEP = timedelta(minutes=15)

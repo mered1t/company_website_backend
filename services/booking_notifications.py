@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
-from services.email_view import booking_links, booking_view
+from services.email_view import booking_links, booking_view, guest_links
 from services.email_service import safe_send, send_booking_cancelled_email, send_booking_changed_email
 from services.i18n import DEFAULT_LANGUAGE
 from services.booking_tokens import create_token
@@ -72,7 +72,7 @@ async def _view(db: AsyncSession, appointment: models.Appointment, language: str
     view = booking_view(
         organization=organization, appointment_id=appointment.id, start_time=appointment.start_time,
         end_time=appointment.end_time, service_name=service.name if service else "",
-        master_name=master.full_name if master else "", price=appointment.price, currency=appointment.currency,
+        master_name=master.full_name if master else "", price=appointment.own_price, currency=appointment.currency,
         client_name=client.full_name if client and client.anonymized_at is None else None, language=language,
     )
     return booking_links(view, manage_token)
@@ -134,3 +134,52 @@ async def prepare_changed_email(
         ),
         log=("Failed to send booking change email (appointment_id=%s)", appointment.id),
     )
+
+
+async def participants_emails(
+    db: AsyncSession, appointment: models.Appointment, kind: str, *, old_start: datetime | None = None,
+    client_ids: set[int] | None = None,
+) -> list[Notification]:
+    """Письма остальным клиентам записи: kind — "cancelled" или "changed". Вызывать до коммита.
+
+    Ссылки управления в них нет: записью управляет основной клиент или салон. Адрес — из карточки клиента,
+    язык — client_email_language салона (как у напоминаний по записям из CRM).
+    client_ids: писать только этим клиентам (например, тем, кто был в записи до правки).
+    """
+    if not appointment.participants:
+        return []
+    with db.no_autoflush:
+        organization = await db.get(models.Organization, appointment.organization_id)
+        service = await db.get(models.Service, appointment.service_id)
+        master = await db.get(models.Master, appointment.master_id)
+    language = organization.client_email_language or DEFAULT_LANGUAGE
+    notifications = []
+    for participant in appointment.participants:
+        client = participant.client
+        if client_ids is not None and client.id not in client_ids:
+            continue
+        if not client.email or client.anonymized_at is not None or client.deleted_at is not None:
+            continue
+        view = guest_links(booking_view(
+            organization=organization, appointment_id=appointment.id, start_time=appointment.start_time,
+            end_time=appointment.end_time, service_name=service.name, master_name=master.full_name,
+            price=participant.price, currency=appointment.currency, client_name=client.full_name, language=language,
+        ))
+        common = dict(to_email=client.email, organization_name=organization.name, service_name=service.name,
+                      master_name=master.full_name, start_time=appointment.start_time, language=language,
+                      party_size=appointment.party_size)
+        if kind == "cancelled":
+            view.pop("google_calendar_url", None)
+            notifications.append(Notification(
+                send=send_booking_cancelled_email, kwargs=dict(common, by_salon=True, as_guest=True, view=view),
+                log=("Failed to send booking cancellation email (appointment_id=%s, client_id=%s)",
+                     appointment.id, client.id),
+            ))
+        else:
+            notifications.append(Notification(
+                send=send_booking_changed_email,
+                kwargs=dict(common, manage_token=None, old_start_time=old_start, by_salon=True, view=view),
+                log=("Failed to send booking change email (appointment_id=%s, client_id=%s)",
+                     appointment.id, client.id),
+            ))
+    return notifications

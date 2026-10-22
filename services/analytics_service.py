@@ -11,6 +11,7 @@ from sqlalchemy import and_, extract, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
+from services.client_visits import person_appointments
 from services.common import get_org_currency, get_org_now
 from domain.enums import AppointmentStatus
 
@@ -138,25 +139,28 @@ async def revenue_trend(db: AsyncSession, org_id: int, period: Period, group_by:
 
 async def top_clients(db: AsyncSession, org_id: int, limit: int, period: Period | None = None) -> list[dict]:
     currency = await get_org_currency(db, org_id)
+    people = person_appointments()  # у каждого клиента записи своя часть суммы
+    period_conditions = [] if period is None else [
+        people.c.start_time >= period.date_from, people.c.start_time <= period.date_to]
     result = await db.execute(
         select(
             models.Client.id,
             models.Client.full_name,
-            func.coalesce(func.sum(A.price), 0).label("total_spent"),
-            func.count(A.id).label("visits_count"),
+            func.coalesce(func.sum(people.c.price), 0).label("total_spent"),
+            func.count(people.c.appointment_id).label("visits_count"),
         )
         .select_from(models.Client)
-        .join(A, A.client_id == models.Client.id)
+        .join(people, people.c.client_id == models.Client.id)
         .where(
             models.Client.organization_id == org_id,
             models.Client.deleted_at.is_(None),
-            A.status == AppointmentStatus.completed,
-            A.deleted_at.is_(None),
-            A.currency == currency,
-            *_period_conditions(period),
+            people.c.status == AppointmentStatus.completed,
+            people.c.deleted_at.is_(None),
+            people.c.currency == currency,
+            *period_conditions,
         )
         .group_by(models.Client.id, models.Client.full_name)
-        .order_by(func.sum(A.price).desc(), models.Client.id)
+        .order_by(func.sum(people.c.price).desc(), models.Client.id)
         .limit(limit),
     )
     return [
@@ -168,16 +172,17 @@ async def top_clients(db: AsyncSession, org_id: int, limit: int, period: Period 
 async def inactive_clients(db: AsyncSession, org_id: int, days: int, limit: int) -> list[dict]:
     org_now = await get_org_now(db, org_id)
     cutoff = org_now - timedelta(days=days)
-    last_visit = func.max(A.start_time)
+    people = person_appointments()
+    last_visit = func.max(people.c.start_time)
 
     result = await db.execute(
         select(models.Client.id, models.Client.full_name, last_visit.label("last_visit"))
         .select_from(models.Client)
         .outerjoin(
-            A,
-            (A.client_id == models.Client.id)
-            & (A.deleted_at.is_(None))
-            & (A.status == AppointmentStatus.completed),
+            people,
+            (people.c.client_id == models.Client.id)
+            & (people.c.deleted_at.is_(None))
+            & (people.c.status == AppointmentStatus.completed),
         )
         .where(
             models.Client.organization_id == org_id,

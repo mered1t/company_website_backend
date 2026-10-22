@@ -57,13 +57,14 @@ async def _series(api, org, shop, **extra):
 
 # ------------------------------------------------------------------ серии
 async def test_weekly_series_is_created(api, org_a, shop):
-    r = await _series(api, org_a, shop, party_size=2, guest_names=["Anna"])
+    r = await _series(api, org_a, shop, participant_ids=[shop.clients[1]])
     assert r.status_code == 201, r.text
     body = r.json()
     starts = [a["start_time"] for a in body["created"]]
     assert starts == [_at(shop.day + timedelta(weeks=i), 10).isoformat() for i in range(4)]
     assert body["skipped"] == [] and all(a["series_id"] == body["series_id"] for a in body["created"])
-    assert all(a["party_size"] == 2 and a["guest_names"] == ["Anna"] for a in body["created"])
+    assert all(a["party_size"] == 2 and a["price"] == 8000 and [p["client_id"] for p in a["participants"]]
+               == [shop.clients[1]] for a in body["created"])
     listed = await api.get(f"{org_a.base}/appointments", headers=org_a.headers,
                            params={"series_id": body["series_id"]})
     assert listed.headers["x-total-count"] == "4"
@@ -96,7 +97,7 @@ async def test_series_limits(api, org_a, shop):
     assert (await _series(api, org_a, shop, count=1)).status_code == 422
     assert (await _series(api, org_a, shop, count=53)).status_code == 422
     assert (await _series(api, org_a, shop, repeat_every_weeks=5)).status_code == 422
-    assert (await _series(api, org_a, shop, party_size=3)).status_code == 400
+    assert (await _series(api, org_a, shop, participant_ids=shop.clients[1:])).status_code == 400  # 3 > 2
 
 
 async def test_cancel_the_rest_of_a_series(api, db, org_a, shop):

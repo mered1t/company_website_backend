@@ -92,10 +92,8 @@ class Service(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     photo: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     emoji: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
-    # до скольких человек можно записать одной записью (теннис вдвоём, корт на компанию); цена — за весь слот
+    # до скольких человек можно записать одной записью (групповая тренировка, корт на компанию); цена — за человека
     max_party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    # можно ли открыть запись на эту услугу для других людей («открытая игра»: свободные места занимают незнакомые)
-    open_games: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     # переводы для публичной страницы: {"pl": {"name": "...", "description": "..."}, ...}
     translations: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
@@ -201,17 +199,10 @@ class Appointment(Base):
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # сколько человек пришло по этой записи (компания на одно время); слот мастера всё равно занят один раз
+    # сколько человек в записи: основной клиент + participants; слот мастера всё равно занят один раз
     party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    # имена остальных участников (необязательно, без контактов): их не больше party_size - 1
-    guest_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     # общий номер у записей, созданных одной серией («каждый вторник в 18:00»); у обычных записей None
     series_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, default=None)
-    # Открытая игра: сколько всего людей может быть в этой записи (None — запись закрытая).
-    # party_size и price у открытой игры — итог по всем: организатор со своей компанией плюс присоединившиеся.
-    open_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
-    # публичный код игры для ссылки «присоединиться» (/book/<slug>/game/<code>)
-    join_code: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -227,6 +218,20 @@ class Appointment(Base):
     client: Mapped["Client"] = relationship(back_populates="appointments")
     service: Mapped["Service"] = relationship()
     master: Mapped["Master"] = relationship()
+    # остальные клиенты записи; грузятся вместе с записью (отдельным запросом на пачку записей)
+    participants: Mapped[list["AppointmentParticipant"]] = relationship(
+        lazy="selectin", order_by="AppointmentParticipant.id", cascade="all, delete-orphan",
+        back_populates="appointment",
+    )
+
+    @property
+    def participant_ids(self) -> list[int]:
+        return [p.client_id for p in self.participants]
+
+    @property
+    def own_price(self) -> int:
+        """Часть суммы основного клиента: вся сумма минус части остальных клиентов."""
+        return self.price - sum(p.price for p in self.participants)
 
     @property
     def service_name(self) -> str:
@@ -497,12 +502,12 @@ Index("ix_waitlist_org_day", WaitlistEntry.organization_id, WaitlistEntry.day)
 
 
 class AppointmentParticipant(Base):
-    """Человек, присоединившийся к открытой игре (не организатор). Своя карточка клиента, своя ссылка «выйти из игры».
+    """Ещё один клиент в записи (не основной): групповая тренировка, корт на компанию. Добавляет салон в CRM.
 
-    Строка остаётся и после выхода (left_at): так видно историю. Места считаются только по тем, кто не вышел.
+    price — его часть суммы записи (цена услуги за человека): так у каждого клиента в истории свои визиты и траты.
     """
     __tablename__ = "appointment_participants"
-    __table_args__ = (CheckConstraint("party_size BETWEEN 1 AND 50", name="ck_participants_party_size"),)
+    __table_args__ = (UniqueConstraint("appointment_id", "client_id", name="uq_participants_appointment_client"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(
@@ -512,20 +517,21 @@ class AppointmentParticipant(Base):
         ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, index=True,
     )
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
-    party_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)  # сам человек и его друзья
-    price: Mapped[int] = mapped_column(Integer, nullable=False)  # цена за человека × party_size на момент входа
-    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    language: Mapped[str] = mapped_column(String(5), nullable=False, default="en", server_default="en")
-    # Ссылка «выйти из игры»: токен = HMAC(SECRET_KEY, token_nonce), в базе только nonce и хеш токена.
-    # Так каждое письмо участнику содержит ту же рабочую ссылку, а утечка базы без ключа доступа не даёт.
-    token_nonce: Mapped[str] = mapped_column(String(32), nullable=False)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    # напоминание этому клиенту уже ушло для такого времени начала (как reminded_start_time у записи)
     reminded_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
-    left_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
-    appointment: Mapped["Appointment"] = relationship()
-    client: Mapped["Client"] = relationship()
+    appointment: Mapped["Appointment"] = relationship(back_populates="participants")
+    client: Mapped["Client"] = relationship(lazy="joined")
+
+    @property
+    def client_name(self) -> str:
+        return self.client.full_name
+
+    @property
+    def client_phone(self) -> str:
+        return self.client.phone
 
 
 class ClientStatus(Base):

@@ -36,7 +36,6 @@ SLUG_PATTERN = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 
 # Имя: пробелы по краям убираются, пустая строка и "   " не проходят
 Name150 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
-GuestName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 MAX_DURATION_MINUTES = 24 * 60
 MAX_PASSWORD_LENGTH = 128
@@ -281,8 +280,6 @@ class ServiceBase(BaseModel):
     photo: str | None = None
     emoji: str | None = None
     max_party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # до скольких человек в одной записи
-    # открытые игры: свободные места в записи могут занять другие люди (нужно max_party_size от 2)
-    open_games: bool = False
     # переводы для публичной страницы записи по языкам интерфейса (en, pl, es, uk, sq); исходный текст — name/description
     translations: dict[Language, ServiceTranslation] = Field(default_factory=dict)
 
@@ -301,11 +298,10 @@ class ServiceCreate(ServiceBase):
 
 class ServiceUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
-        {"name", "price", "duration_minutes", "max_party_size", "open_games", "translations"})
+        {"name", "price", "duration_minutes", "max_party_size", "translations"})
     name: Name150 | None = None
     translations: dict[Language, ServiceTranslation] | None = None  # заменяет все переводы; {} — удалить все
     max_party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
-    open_games: bool | None = None
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     description: str | None = Field(default=None, max_length=2000)
@@ -458,39 +454,28 @@ class ConflictWarning(BaseModel):
 
 
 class AppointmentBase(BaseModel):
-    client_id: int
+    client_id: int  # основной клиент записи
     service_id: int
     master_id: int
     start_time: datetime
     notes: str | None = None
-    party_size: int = Field(default=1, ge=1, le=MAX_PARTY_SIZE)  # сколько человек придёт по этой записи
-    guest_names: list[GuestName] = Field(default_factory=list, max_length=MAX_PARTY_SIZE - 1)
-    # открытая игра: сколько всего людей может быть (свободные места занимают другие). None — запись закрытая
-    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
 
 
-def _check_guest_count(guest_names: list[str], party_size: int) -> None:
-    if len(guest_names) > party_size - 1:
-        raise ValueError("guest_names: at most party_size - 1 names (the person who books is not listed)")
+# ещё клиенты в той же записи (групповая тренировка, корт на компанию): id карточек клиентов салона
+ParticipantIds = Annotated[list[int], Field(max_length=MAX_PARTY_SIZE - 1)]
 
 
 class AppointmentCreate(AppointmentBase):
     notes: str | None = Field(default=None, max_length=1000)
-
-    @model_validator(mode="after")
-    def _guests_fit(self):
-        _check_guest_count(self.guest_names, self.party_size)
-        return self
+    participant_ids: ParticipantIds = Field(default_factory=list)
 
 
 class AppointmentUpdate(PatchModel):
     non_nullable: ClassVar[frozenset[str]] = frozenset(
-        {"client_id", "service_id", "master_id", "start_time", "status", "party_size", "guest_names"}
+        {"client_id", "service_id", "master_id", "start_time", "status", "participant_ids"}
     )
-    party_size: int | None = Field(default=None, ge=1, le=MAX_PARTY_SIZE)
-    guest_names: list[GuestName] | None = Field(default=None, max_length=MAX_PARTY_SIZE - 1)
-    # число мест открытой игры; null — закрыть игру (если никто ещё не присоединился)
-    open_capacity: int | None = Field(default=None, ge=2, le=MAX_PARTY_SIZE)
+    # полный новый список остальных клиентов записи (не изменения): [] — убрать всех
+    participant_ids: ParticipantIds | None = None
     # false: не писать клиенту об этом изменении или отмене (салон уже договорился по телефону).
     # Не поле записи: на напоминание по новому времени не влияет.
     notify_client: bool = True
@@ -503,16 +488,27 @@ class AppointmentUpdate(PatchModel):
     notes: str | None = Field(default=None, max_length=1000)
 
 
+class ParticipantBrief(BaseModel):
+    """Ещё один клиент в записи. price — его часть суммы записи (цена услуги за человека)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    client_id: int
+    client_name: str
+    client_phone: str
+    price: int
+
+
 class AppointmentPublic(AppointmentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     end_time: datetime
     status: AppointmentStatus
-    price: int
+    price: int  # сумма за всю запись: цена услуги × party_size
     currency: str
+    party_size: int = 1  # сколько человек в записи: основной клиент + participants
+    participants: list[ParticipantBrief] = Field(default_factory=list)
     series_id: str | None = None
-    join_code: str | None = None  # открытая игра: код для ссылки /book/<slug>/game/<code>
     auto_completed: bool = False  # «выполнена» поставила автоотметка; салон может поправить на no_show
     created_at: datetime
 
@@ -579,7 +575,7 @@ class OrganizationUpdate(PatchModel):
     auto_complete: Literal["off", "after_2h", "end_of_day"] | None = None
     staff_booking_reminders: bool | None = None  # напоминать клиентам о записях, созданных в CRM
     business_type: BusinessType | None = None  # null очищает
-    group_bookings: bool | None = None  # групповые записи и открытые игры
+    group_bookings: bool | None = None  # несколько клиентов в одной записи
     client_email_language: Language | None = None  # язык этих напоминаний
 
     # публичная страница записи; null очищает поле
@@ -657,7 +653,7 @@ class PublicOrganizationInfo(BaseModel):
     timezone: str
     booking_horizon_days: int
     booking_enabled: bool = True  # false, если у салона закончилась подписка: записываться нельзя
-    group_bookings: bool = False  # true: показывать выбор числа людей и открытые игры
+    group_bookings: bool = False  # true: в CRM можно добавлять в запись нескольких клиентов
     address: str | None = None
     phone: str | None = None
     logo_url: str | None = None
@@ -915,11 +911,9 @@ class PublicBookingRequest(BaseModel):
     service_id: int
     start_time: datetime
     notes: str | None = Field(default=None, max_length=500)
-    # Онлайн всегда записывается один человек. Компании, гостей и открытые игры создаёт только салон в CRM.
-    # Поля оставлены, чтобы старый фронт получил понятную 422, а не молча записал одного вместо компании.
+    # Онлайн всегда записывается один человек. Несколько клиентов в одну запись добавляет только салон в CRM.
+    # Поле оставлено, чтобы старый фронт получил понятную 422, а не молча записал одного вместо компании.
     party_size: int = Field(default=1, ge=1, le=1)
-    guest_names: list[GuestName] = Field(default_factory=list, max_length=0)
-    open_capacity: None = None
     language: Language | None = None  # язык, на котором клиент видит страницу записи: на нём придёт письмо
     # Поле-ловушка для ботов: на странице оно скрыто, человек его не заполняет. Заполнено — запрос отклоняется.
     website: str | None = Field(default=None, max_length=200)
@@ -943,8 +937,6 @@ class BookingManageInfo(BaseModel):
     price: int
     currency: str
     party_size: int
-    open_capacity: int | None = None  # открытая игра: всего мест (party_size — сколько людей уже в игре)
-    join_code: str | None = None      # открытая игра: код для ссылки «присоединиться»
     organization_name: str
     organization_slug: str
     can_modify: bool  # можно ли ещё отменить или перенести
@@ -965,60 +957,6 @@ class AnalyticsDashboardResponse(BaseModel):
     top_clients: list[TopClientResponse]
     popular_services: list[PopularServiceResponse]
     masters: list[MasterWorkloadResponse]
-
-
-# ------------------------------------------------------------------ открытые игры
-class OpenGamePublic(BaseModel):
-    """Открытая игра на публичной странице салона. Имён и контактов игроков здесь нет — только сколько мест занято."""
-    code: str
-    service_id: int
-    service_name: str
-    master_id: int
-    master_name: str
-    start_time: datetime
-    end_time: datetime
-    capacity: int
-    players: int
-    spots_left: int
-    price_per_person: int
-    currency: str
-    can_join: bool  # игра ещё не началась, не отменена и есть места
-
-
-class JoinGameRequest(BaseModel):
-    client_full_name: Name150
-    client_phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
-    client_email: EmailStr | None = Field(default=None, max_length=120)
-    party_size: int = Field(default=1, ge=1, le=1)  # онлайн входит один человек: компании записывает только салон
-    language: Language | None = None
-    website: str | None = Field(default=None, max_length=200)  # поле-ловушка для ботов
-
-
-class GameSpotInfo(BaseModel):
-    """Место участника глазами самого участника (страница по ссылке из письма)."""
-    game: OpenGamePublic
-    status: Literal["joined", "left", "cancelled"]  # cancelled — игру отменили
-    party_size: int
-    price: int
-    organization_name: str
-    organization_slug: str
-    can_leave: bool
-    leave_deadline: datetime
-
-
-class ParticipantPublic(BaseModel):
-    """Участник открытой игры для CRM."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    client_id: int
-    client_name: str
-    client_phone: str
-    email: str | None
-    party_size: int
-    price: int
-    created_at: datetime
-    left_at: datetime | None
 
 
 # ------------------------------------------------------------------ стартовая страница CRM «Сегодня» и счётчики меню

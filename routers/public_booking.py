@@ -17,8 +17,8 @@ from core.rate_limiter import limiter
 from schemas.schemas import AvailableSlot, BookingManageInfo, BookingRescheduleRequest
 from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_waitlist_emails
 from services.booking import check_on_slot_grid, check_slot_free, get_free_slots, persist, to_salon_time
-from services.booking_notifications import dispatch, dispatch_many, prepare_cancelled_email, prepare_changed_email
-from services.game_notifications import participants_emails
+from services.booking_notifications import (dispatch, dispatch_many, participants_emails, prepare_cancelled_email,
+                                            prepare_changed_email)
 from services.booking_tokens import load_by_token
 from services.ics import appointment_ics
 from services.notifications import notify_booking
@@ -46,8 +46,6 @@ def _info(appointment: models.Appointment, org_now: datetime) -> BookingManageIn
         price=appointment.price,
         currency=appointment.currency,
         party_size=appointment.party_size,
-        open_capacity=appointment.open_capacity,
-        join_code=appointment.join_code,
         organization_name=appointment.organization.name,
         organization_slug=appointment.organization.slug,
         can_modify=appointment.status == AppointmentStatus.scheduled and org_now < deadline,
@@ -131,13 +129,13 @@ async def cancel_booking(
         details="Cancelled by the client via the link from the email",
     )
     notification = await prepare_cancelled_email(db, appointment, by_salon=False)
-    game_emails = await participants_emails(db, appointment, "cancelled")  # открытая игра: всем участникам
+    participant_emails = await participants_emails(db, appointment, "cancelled")  # остальным клиентам записи
     await notify_booking(db, appointment, NotificationType.booking_cancelled)  # колокольчик в CRM
     info = _info(appointment, org_now)  # собираем до commit: после него объекты могут устареть
     waitlist_emails = await prepare_waitlist_emails(db, appointment.organization_id, freed_slot(appointment))
     await db.commit()
     dispatch(background_tasks, notification)
-    dispatch_many(background_tasks, game_emails)
+    dispatch_many(background_tasks, participant_emails)
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return info
 
@@ -176,7 +174,7 @@ async def reschedule_booking(
     )
     await persist(db, commit=False)  # защита от двойной записи превращается в 400
     notification = await prepare_changed_email(db, appointment, old_start=old_start, by_salon=False)
-    game_emails = await participants_emails(db, appointment, "changed")
+    participant_emails = await participants_emails(db, appointment, "changed", old_start=old_start)
     await notify_booking(db, appointment, NotificationType.booking_rescheduled, old_start=old_start)  # колокольчик в CRM
     info = _info(appointment, org_now)
     waitlist_emails = await prepare_waitlist_emails(
@@ -184,6 +182,6 @@ async def reschedule_booking(
     )
     await db.commit()
     dispatch(background_tasks, notification)
-    dispatch_many(background_tasks, game_emails)
+    dispatch_many(background_tasks, participant_emails)
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return info

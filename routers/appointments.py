@@ -15,11 +15,11 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (AppointmentCreate, AppointmentPublic, AppointmentUpdate, AppointmentWithDetails,
                              AppointmentSeriesCreate, AppointmentSeriesResult, SeriesCancelResult, SeriesConflict,
-                             ParticipantPublic, BulkStatusRequest, BulkStatusResult, BulkStatusFailure)
+                             BulkStatusRequest, BulkStatusResult, BulkStatusFailure)
 
 from services.booking import (
     check_master_provides_service, check_party_size, check_slot_free,
-    create_appointment_record, ensure_group_bookings, persist,
+    create_appointment_record, load_participants, persist, reprice, set_participants,
 )
 
 from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
@@ -30,9 +30,8 @@ from services.common import (get_owned, set_total_count, only_changed, changed_f
                              get_org_now)
 from core.time_utils import utc_now
 from domain.enums import AppointmentStatus
-from services.booking_notifications import dispatch, dispatch_many, prepare_cancelled_email, prepare_changed_email
-from services.game_notifications import participant_email, participants_emails
-from services.open_games import joined_seats, recalc_open_game, remove_participant, set_open_capacity
+from services.booking_notifications import (dispatch, dispatch_many, participants_emails, prepare_cancelled_email,
+                                            prepare_changed_email)
 from services.waitlist import dispatch_waitlist_emails, freed_slot, prepare_waitlist_emails
 
 router = APIRouter()
@@ -83,7 +82,7 @@ class AppointmentFilters:
 
 
 # поля, от которых зависят деньги и история визита: мастер правит их у закрытой записи только в день визита
-_CLOSED_FIELDS = {"status", "service_id", "start_time", "client_id"}
+_CLOSED_FIELDS = {"status", "service_id", "start_time", "client_id", "participant_ids"}
 
 
 @router.post("", response_model=AppointmentPublic, status_code=status.HTTP_201_CREATED)
@@ -102,6 +101,8 @@ async def create_appointment(
     await get_owned_active(db, models.Client, appointment.client_id, membership.organization_id, "Client")
     service = await get_owned_active(db, models.Service, appointment.service_id, membership.organization_id, "Service")
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
+    participants = await load_participants(db, membership.organization_id, service, appointment.client_id,
+                                           appointment.participant_ids)
 
     await check_master_provides_service(db, master_id, service.id)
 
@@ -118,11 +119,8 @@ async def create_appointment(
         start_time=start_time,
         end_time=end_time,
         notes=appointment.notes,
-        party_size=appointment.party_size,
-        guest_names=appointment.guest_names,
+        participants=participants,
     )
-    if appointment.open_capacity is not None:
-        await set_open_capacity(db, new_appointment, service, appointment.open_capacity, joined=0)
 
     await log_activity(
         db, membership.organization_id, current_user.id,
@@ -155,7 +153,8 @@ async def create_appointment_series(
     service = await get_owned_active(db, models.Service, body.service_id, membership.organization_id, "Service")
     await get_owned_active(db, models.Master, master_id, membership.organization_id, "Master")
     await check_master_provides_service(db, master_id, service.id)
-    check_party_size(service, body.party_size)
+    participants = await load_participants(db, membership.organization_id, service, body.client_id,
+                                           body.participant_ids)
 
     first = body.start_time.replace(tzinfo=None)
     duration = timedelta(minutes=service.duration_minutes)
@@ -171,11 +170,9 @@ async def create_appointment_series(
         appointment = await create_appointment_record(
             db, organization_id=membership.organization_id, client_id=body.client_id, service=service,
             master_id=master_id, start_time=start, end_time=start + duration, notes=body.notes,
-            party_size=body.party_size, guest_names=body.guest_names,
+            participants=participants,
         )
         appointment.series_id = series_id
-        if body.open_capacity is not None:
-            await set_open_capacity(db, appointment, service, body.open_capacity, joined=0)
         created.append(appointment)
 
     if skipped and not body.skip_conflicts:
@@ -223,10 +220,10 @@ async def cancel_appointment_series(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     future = [a for a in rows if a.status == AppointmentStatus.scheduled and a.start_time > org_now]
-    game_emails = []
+    participant_emails = []
     for appointment in future:
         appointment.status = AppointmentStatus.cancelled
-        game_emails += await participants_emails(db, appointment, "cancelled")  # открытые игры: письма игрокам
+        participant_emails += await participants_emails(db, appointment, "cancelled")  # остальным клиентам записи
     if future:
         await log_activity(
             db, membership.organization_id, current_user.id,
@@ -237,7 +234,7 @@ async def cancel_appointment_series(
     waitlist_emails = await prepare_waitlist_emails(db, membership.organization_id, freed)
     await db.commit()
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
-    dispatch_many(background_tasks, game_emails)
+    dispatch_many(background_tasks, participant_emails)
     return SeriesCancelResult(cancelled=len(future))
 
 
@@ -341,8 +338,6 @@ async def update_appointment(
     notify_client = update_data.pop("notify_client", True)
     update_data = only_changed(appointment, update_data)  # форма целиком: учитываем только то, что поменялось
     logged_fields = dict(update_data)
-    capacity_changed = "open_capacity" in update_data
-    new_capacity = update_data.pop("open_capacity", None)
     old_status, old_start = appointment.status, appointment.start_time
     old_master_id, old_service_id = appointment.master_id, appointment.service_id
 
@@ -360,6 +355,8 @@ async def update_appointment(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the owner or an admin can change a closed appointment after its day",
         )
+    new_participant_ids = update_data.pop("participant_ids", None)
+    old_participant_ids = set(appointment.participant_ids)
 
     # Проверяем, что переданные id принадлежат ЭТОЙ организации
     if "client_id" in update_data:
@@ -394,22 +391,21 @@ async def update_appointment(
         if "service_id" in update_data:
             new_currency = await get_org_currency(db, membership.organization_id)
 
-    # компания должна помещаться в услугу: и при смене числа людей, и при смене услуги
-    if "party_size" in update_data or "service_id" in update_data:
-        target_service = new_service or await get_owned_active(
-            db, models.Service, appointment.service_id, membership.organization_id, "Service")
-        check_party_size(target_service, update_data.get("party_size", appointment.party_size))
-
-    if update_data.get("party_size", 1) > 1 or update_data.get("guest_names"):
-        await ensure_group_bookings(db, membership.organization_id)
-
-    if "party_size" in update_data or "guest_names" in update_data:
-        guests = update_data.get("guest_names", appointment.guest_names) or []
-        if len(guests) > update_data.get("party_size", appointment.party_size) - 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Too many guest names for this party size",
-            )
+    # остальные клиенты записи: новый список целиком; все должны помещаться в услугу (и при смене услуги)
+    main_client_id = update_data.get("client_id", appointment.client_id)
+    participant_clients = None
+    price_service = new_service if "service_id" in update_data else None
+    if new_participant_ids is not None:
+        with db.no_autoflush:
+            price_service = new_service or await db.get(models.Service, appointment.service_id)
+        participant_clients = await load_participants(db, membership.organization_id, price_service,
+                                                      main_client_id, new_participant_ids)
+    else:
+        if main_client_id in old_participant_ids:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="This client is already in the appointment. Remove them from participants first")
+        if new_service is not None and "service_id" in update_data:
+            check_party_size(new_service, 1 + len(old_participant_ids))
 
     for field, value in update_data.items():
         setattr(appointment, field, value)
@@ -446,21 +442,16 @@ async def update_appointment(
     if recheck_needed:
         appointment.end_time = appointment.start_time + timedelta(minutes=new_service.duration_minutes)
         if "service_id" in update_data:
-            appointment.price = new_service.price
             appointment.currency = new_currency
 
         await check_slot_free(db, appointment.master_id, appointment.start_time,
                                   appointment.end_time, exclude_id=appointment.id)
 
-    # открытая игра: открыть, закрыть, поменять число мест; цены за человека пересчитываются
-    if capacity_changed or (appointment.open_capacity and ({"party_size", "service_id"} & update_data.keys())):
-        current_service = new_service or await get_owned_active(
-            db, models.Service, appointment.service_id, membership.organization_id, "Service")
-        if capacity_changed:
-            await set_open_capacity(db, appointment, current_service, new_capacity,
-                              joined=await joined_seats(db, appointment.id))
-        if appointment.open_capacity:
-            await recalc_open_game(db, appointment, current_service)
+    # цена за человека: пересчёт, если поменялись услуга или состав записи
+    if participant_clients is not None:
+        set_participants(appointment, price_service, participant_clients)
+    elif price_service is not None:
+        reprice(appointment, price_service)
 
     if logged_fields:
         await log_activity(
@@ -472,13 +463,13 @@ async def update_appointment(
     # Письмо клиенту: будущую запись отменили или поменяли время, мастера, услугу.
     # Прошедшие записи и правка заметок/статуса письма не вызывают.
     notification = None
-    game_emails = []
+    participant_emails = []
     if old_status == AppointmentStatus.scheduled and notify_client:
         with db.no_autoflush:
             org_now = await get_org_now(db, membership.organization_id)
         if appointment.status == AppointmentStatus.cancelled and old_start > org_now:
             notification = await prepare_cancelled_email(db, appointment, by_salon=True)
-            game_emails = await participants_emails(db, appointment, "cancelled")
+            participant_emails = await participants_emails(db, appointment, "cancelled", client_ids=old_participant_ids)
         elif (
             appointment.status == AppointmentStatus.scheduled
             and appointment.start_time > org_now
@@ -491,7 +482,10 @@ async def update_appointment(
                 old_start=old_start if appointment.start_time != old_start else None,
                 by_salon=True,
             )
-            game_emails = await participants_emails(db, appointment, "changed")
+            participant_emails = await participants_emails(
+                db, appointment, "changed", old_start=old_start if appointment.start_time != old_start else None,
+                client_ids=old_participant_ids,  # кого только что добавили, тому «запись изменена» не пишем
+            )
 
     # прежнее время освободилось (отмена, перенос, другой мастер или услуга): сообщить листу ожидания
     waitlist_emails = []
@@ -509,82 +503,9 @@ async def update_appointment(
     await persist(db, commit=True)
     await db.refresh(appointment)
     dispatch(background_tasks, notification)
-    dispatch_many(background_tasks, game_emails)
+    dispatch_many(background_tasks, participant_emails)
     dispatch_waitlist_emails(background_tasks, waitlist_emails)
     return appointment
-
-
-# ------------------------------------------------------------------ открытые игры: участники
-async def _visible_appointment(db: AsyncSession, appointment_id: int, membership: models.Membership):
-    query = select(models.Appointment).where(
-        models.Appointment.id == appointment_id,
-        models.Appointment.organization_id == membership.organization_id,
-        models.Appointment.deleted_at.is_(None),
-    )
-    appointment = (await db.execute(_visible_to(query, membership))).scalars().first()
-    if not appointment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
-    return appointment
-
-
-@router.get("/{appointment_id}/participants", response_model=list[ParticipantPublic])
-async def list_participants(
-    appointment_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    membership: CurrentMembership,
-    include_left: bool = False,
-):
-    """Кто присоединился к открытой игре (организатор — клиент самой записи, его здесь нет)."""
-    await _visible_appointment(db, appointment_id, membership)
-    query = (
-        select(models.AppointmentParticipant, models.Client)
-        .join(models.Client, models.Client.id == models.AppointmentParticipant.client_id)
-        .where(models.AppointmentParticipant.appointment_id == appointment_id)
-        .order_by(models.AppointmentParticipant.id)
-    )
-    if not include_left:
-        query = query.where(models.AppointmentParticipant.left_at.is_(None))
-    return [
-        ParticipantPublic(
-            id=p.id, client_id=c.id, client_name=c.full_name, client_phone=c.phone, email=p.email or c.email,
-            party_size=p.party_size, price=p.price, created_at=p.created_at, left_at=p.left_at,
-        )
-        for p, c in (await db.execute(query)).all()
-    ]
-
-
-@router.delete("/{appointment_id}/participants/{participant_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_game_participant(
-    appointment_id: int,
-    participant_id: int,
-    background_tasks: BackgroundTasks,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
-    membership: CurrentMembership,
-    notify_client: bool = True,
-):
-    """Убрать участника из открытой игры: место снова свободно, участнику уходит письмо (notify_client=false — без)."""
-    appointment = await _visible_appointment(db, appointment_id, membership)
-    participant = (await db.execute(
-        select(models.AppointmentParticipant).where(
-            models.AppointmentParticipant.id == participant_id,
-            models.AppointmentParticipant.appointment_id == appointment.id,
-            models.AppointmentParticipant.left_at.is_(None),
-        ),
-    )).scalars().first()
-    if participant is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
-    remove_participant(appointment, participant)
-    await log_activity(
-        db, membership.organization_id, current_user.id,
-        action="updated", entity_type="appointment", entity_id=appointment.id,
-        details=f"Removed participant #{participant.id} from the open game",
-    )
-    notification = None
-    if notify_client and appointment.status == AppointmentStatus.scheduled:
-        notification = await participant_email(db, appointment, participant, "removed")
-    await db.commit()
-    dispatch(background_tasks, notification)
 
 
 @router.post("/bulk-status", response_model=BulkStatusResult)

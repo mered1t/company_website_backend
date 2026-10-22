@@ -5,7 +5,7 @@
 {{ ui.badge(t.badge_cancelled, "grey") }}
 </td></tr></table>
 {{ ui.heading(t.heading, center=true) }}
-{{ ui.para(t.body_salon if by_salon else t.body_client, center=true) }}
+{{ ui.para(t.body_guest if as_guest else (t.body_salon if by_salon else t.body_client), center=true) }}
 <div style="height:28px;"></div>
 {{ ui.panel_open(accent=false) }}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">

@@ -73,8 +73,7 @@ async def _populate(db, org, tag):
         models.WaitlistEntry(organization_id=org.org_id, service_id=service.id, day=datetime(2030, 3, 2).date(),
                              client_name=f"{tag}-waiter", phone="+380671112222", email=f"{tag}-wait@example.com"),
         models.AppointmentParticipant(organization_id=org.org_id, appointment_id=appointment.id, client_id=client.id,
-                                      party_size=1, price=1500, email=f"{tag}-player@example.com",
-                                      token_nonce=f"{tag}-nonce", token_hash=f"{tag}-spot-hash"),
+                                      price=1500),
     ])
     await db.commit()
     return SimpleNamespace(owner_id=owner_id, service_id=service.id, master_id=master.id, client_id=client.id,

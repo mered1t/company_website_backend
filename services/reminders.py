@@ -12,7 +12,8 @@
   * если запись перенесли, start_time перестаёт совпадать с reminded_start_time, и напоминание уйдёт заново;
   * если клиент записался уже внутри окна (например, за 5 часов), письмо-подтверждение только что пришло,
     поэтому отдельное напоминание не отправляем;
-  * если письмо не ушло (сбой Resend), отметка снимается, и следующая проверка попробует ещё раз.
+  * если письмо не ушло (сбой Resend), отметка снимается, и следующая проверка попробует ещё раз;
+  * остальные клиенты записи получают своё напоминание, без ссылки «отменить / перенести».
 """
 import asyncio
 import logging
@@ -28,7 +29,7 @@ import models
 from services.common import to_org_local
 from core.config import settings
 from services.email_service import send_booking_reminder_email
-from services.email_view import booking_links, booking_view
+from services.email_view import booking_links, booking_view, guest_links
 from domain.enums import AppointmentStatus
 from services.booking_tokens import create_token, hash_token
 from core.time_utils import utc_now
@@ -141,7 +142,7 @@ async def _find_candidates(db: AsyncSession, window: timedelta) -> list[_Candida
                     organization=appointment.organization, appointment_id=appointment.id,
                     start_time=appointment.start_time, end_time=appointment.end_time,
                     service_name=appointment.service.name, master_name=appointment.master.full_name,
-                    price=appointment.price, currency=appointment.currency,
+                    price=appointment.own_price, currency=appointment.currency,
                     client_name=appointment.client.full_name if appointment.client.anonymized_at is None else None,
                     language=language,
                 ),
@@ -213,16 +214,15 @@ async def send_due_reminders(db: AsyncSession) -> int:
             await db.commit()
             continue
         sent += 1
-    return sent + await send_game_reminders(db, window)
+    return sent + await send_participant_reminders(db, window)
 
 
-async def send_game_reminders(db: AsyncSession, window: timedelta) -> int:
-    """Напоминания участникам открытых игр (у каждого своя отметка reminded_start_time и своя ссылка «выйти»).
+async def send_participant_reminders(db: AsyncSession, window: timedelta) -> int:
+    """Напоминания остальным клиентам записи (у каждого своя отметка reminded_start_time).
 
-    Кто присоединился уже внутри окна, только что получил письмо «вы в игре»: отмечаем без письма.
+    Как у записей из CRM: только если салон не отключил staff_booking_reminders и в карточке клиента есть email.
+    Ссылки управления записью в письме нет: записью управляет основной клиент или салон.
     """
-    from services.game_notifications import participant_email  # здесь: game_notifications импортирует email_service
-
     tz_names = (await db.execute(select(models.Organization.timezone).distinct())).scalars().all()
     rows = []
     for tz_name in tz_names:
@@ -231,17 +231,20 @@ async def send_game_reminders(db: AsyncSession, window: timedelta) -> int:
         except ZoneInfoNotFoundError:
             continue
         result = await db.execute(
-            select(models.AppointmentParticipant.id, models.Appointment.start_time,
-                   models.AppointmentParticipant.created_at, models.Organization.timezone)
+            select(models.AppointmentParticipant.id, models.Appointment.start_time)
             .join(models.Appointment, models.Appointment.id == models.AppointmentParticipant.appointment_id)
             .join(models.Organization, models.Organization.id == models.Appointment.organization_id)
+            .join(models.Client, models.Client.id == models.AppointmentParticipant.client_id)
             .where(
                 models.Organization.timezone == tz_name,
                 access_filter(),
-                models.AppointmentParticipant.left_at.is_(None),
+                models.Organization.staff_booking_reminders.is_(True),
+                models.Client.email.is_not(None),
+                models.Client.email != "",
+                models.Client.deleted_at.is_(None),
+                models.Client.anonymized_at.is_(None),
                 models.Appointment.status == AppointmentStatus.scheduled,
                 models.Appointment.deleted_at.is_(None),
-                models.Appointment.open_capacity.is_not(None),
                 models.Appointment.start_time > org_now,
                 models.Appointment.start_time <= org_now + window,
                 models.AppointmentParticipant.reminded_start_time.is_distinct_from(models.Appointment.start_time),
@@ -253,11 +256,10 @@ async def send_game_reminders(db: AsyncSession, window: timedelta) -> int:
     await db.rollback()
 
     sent = 0
-    for participant_id, start_time, created_at, tz_name in rows:
+    for participant_id, start_time in rows:
         claim = await db.execute(
             update(models.AppointmentParticipant)
             .where(models.AppointmentParticipant.id == participant_id,
-                   models.AppointmentParticipant.left_at.is_(None),
                    models.AppointmentParticipant.reminded_start_time.is_distinct_from(start_time))
             .values(reminded_start_time=start_time)
             .execution_options(synchronize_session=False),
@@ -265,19 +267,29 @@ async def send_game_reminders(db: AsyncSession, window: timedelta) -> int:
         if claim.rowcount == 0:
             await db.rollback()
             continue
-        if to_org_local(created_at, tz_name) > start_time - window:  # вошёл в игру внутри окна
-            await db.commit()
-            continue
         participant = await db.get(models.AppointmentParticipant, participant_id)
         appointment = await db.get(models.Appointment, participant.appointment_id)
-        notification = await participant_email(db, appointment, participant, "reminder")
+        organization = await db.get(models.Organization, appointment.organization_id)
+        service = await db.get(models.Service, appointment.service_id)
+        master = await db.get(models.Master, appointment.master_id)
+        client = participant.client
+        language = organization.client_email_language
+        kwargs = dict(
+            to_email=client.email, organization_name=organization.name, service_name=service.name,
+            master_name=master.full_name, start_time=appointment.start_time, manage_token=None, language=language,
+            party_size=appointment.party_size,
+            view=guest_links(booking_view(
+                organization=organization, appointment_id=appointment.id, start_time=appointment.start_time,
+                end_time=appointment.end_time, service_name=service.name, master_name=master.full_name,
+                price=participant.price, currency=appointment.currency, client_name=client.full_name,
+                language=language,
+            )),
+        )
         await db.commit()
-        if notification is None:
-            continue
         try:
-            await asyncio.to_thread(notification.send, **notification.kwargs)
+            await asyncio.to_thread(send_booking_reminder_email, **kwargs)
         except Exception:
-            logger.exception("Failed to send game reminder (participant_id=%s)", participant_id)
+            logger.exception("Failed to send booking reminder (participant_id=%s)", participant_id)
             await db.execute(
                 update(models.AppointmentParticipant)
                 .where(models.AppointmentParticipant.id == participant_id)

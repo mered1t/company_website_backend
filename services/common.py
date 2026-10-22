@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import secrets
@@ -113,9 +113,14 @@ def changed_fields_details(fields) -> str:
 async def check_no_active_appointments(db: AsyncSession, field_name: str, entity_id: int, entity_label: str, organization_id: int) -> None:
     field = getattr(models.Appointment, field_name)
     org_now = await get_org_now(db, organization_id)
+    condition = field == entity_id
+    if field_name == "client_id":  # клиент может быть и одним из остальных клиентов чужой записи
+        condition = or_(condition, models.Appointment.id.in_(
+            select(models.AppointmentParticipant.appointment_id)
+            .where(models.AppointmentParticipant.client_id == entity_id)))
     result = await db.execute(
-        select(models.Appointment).where(
-            field == entity_id,
+        select(models.Appointment.id).where(
+            condition,
             models.Appointment.status == AppointmentStatus.scheduled,
             models.Appointment.deleted_at.is_(None),
             models.Appointment.start_time > org_now,
@@ -149,7 +154,7 @@ async def check_no_history(db: AsyncSession, field_name: str, entity_id: int, en
     field = getattr(models.Appointment, field_name)
     result = await db.execute(select(models.Appointment).where(field == entity_id))
     played = None
-    if field_name == "client_id":  # клиент мог быть участником чужой открытой игры
+    if field_name == "client_id":  # клиент мог быть одним из остальных клиентов чужой записи
         played = (await db.execute(select(models.AppointmentParticipant.id).where(
             models.AppointmentParticipant.client_id == entity_id))).first()
     if result.scalars().first() or played:

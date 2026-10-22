@@ -32,6 +32,7 @@ from schemas.schemas import (AppointmentWithDetails,
                              ClientBulkStatusResult,
                              ClientStatusBrief)
 
+from services.client_visits import client_appointment_ids, person_appointments
 from services.common import (get_owned, set_total_count, only_changed, changed_fields_details,
                              log_activity,
                              check_no_active_appointments,
@@ -126,25 +127,16 @@ async def list_clients(
             .correlate(models.Client)
             .scalar_subquery()
         )
-    elif sort == "last_visit":
-        # последний состоявшийся визит; клиенты без визитов — всегда в конце списка
+    elif sort in ("last_visit", "visits"):
+        # последний состоявшийся визит или их число (и как основной клиент, и в чужой записи);
+        # клиенты без визитов — всегда в конце списка
+        people = person_appointments()
         column = (
-            select(func.max(models.Appointment.start_time))
+            select(func.max(people.c.start_time) if sort == "last_visit" else func.count(people.c.appointment_id))
             .where(
-                models.Appointment.client_id == models.Client.id,
-                models.Appointment.deleted_at.is_(None),
-                models.Appointment.status == AppointmentStatus.completed,
-            )
-            .correlate(models.Client)
-            .scalar_subquery()
-        )
-    elif sort == "visits":
-        column = (
-            select(func.count(models.Appointment.id))
-            .where(
-                models.Appointment.client_id == models.Client.id,
-                models.Appointment.deleted_at.is_(None),
-                models.Appointment.status == AppointmentStatus.completed,
+                people.c.client_id == models.Client.id,
+                people.c.deleted_at.is_(None),
+                people.c.status == AppointmentStatus.completed,
             )
             .correlate(models.Client)
             .scalar_subquery()
@@ -161,36 +153,40 @@ async def list_clients(
     return await with_visit_stats(db, result.scalars().all(), membership)
 
 
-def _completed_visits():
-    """Выполненные визиты по клиентам: (client_id, visits, last_visit)."""
+def _completed_visits(organization_id: int):
+    """Выполненные визиты по клиентам салона: (client_id, visits, last_visit). Считаются и записи,
+    где клиент не основной, а один из остальных."""
+    people = person_appointments()
     return (
         select(
-            models.Appointment.client_id.label("client_id"),
-            func.count(models.Appointment.id).label("visits"),
-            func.max(models.Appointment.start_time).label("last_visit"),
+            people.c.client_id.label("client_id"),
+            func.count(people.c.appointment_id).label("visits"),
+            func.max(people.c.start_time).label("last_visit"),
         )
         .where(
-            models.Appointment.deleted_at.is_(None),
-            models.Appointment.status == AppointmentStatus.completed,
+            people.c.organization_id == organization_id,
+            people.c.deleted_at.is_(None),
+            people.c.status == AppointmentStatus.completed,
         )
-        .group_by(models.Appointment.client_id)
+        .group_by(people.c.client_id)
     )
 
 
-def _client_stats():
-    """Всё для карточки клиента одним запросом: визиты, последний визит, потрачено, неявки."""
-    done = models.Appointment.status == AppointmentStatus.completed
+def _client_stats(client_ids: list[int]):
+    """Всё для карточки клиента одним запросом: визиты, последний визит, потрачено (его часть), неявки."""
+    people = person_appointments()
+    done = people.c.status == AppointmentStatus.completed
     return (
         select(
-            models.Appointment.client_id.label("client_id"),
-            func.count(models.Appointment.id).filter(done).label("visits"),
-            func.max(models.Appointment.start_time).filter(done).label("last_visit"),
-            func.coalesce(func.sum(models.Appointment.price).filter(done), 0).label("total_spent"),
-            func.count(models.Appointment.id).filter(
-                models.Appointment.status == AppointmentStatus.no_show).label("no_shows"),
+            people.c.client_id.label("client_id"),
+            func.count(people.c.appointment_id).filter(done).label("visits"),
+            func.max(people.c.start_time).filter(done).label("last_visit"),
+            func.coalesce(func.sum(people.c.price).filter(done), 0).label("total_spent"),
+            func.count(people.c.appointment_id).filter(
+                people.c.status == AppointmentStatus.no_show).label("no_shows"),
         )
-        .where(models.Appointment.deleted_at.is_(None))
-        .group_by(models.Appointment.client_id)
+        .where(people.c.deleted_at.is_(None), people.c.client_id.in_(client_ids))
+        .group_by(people.c.client_id)
     )
 
 
@@ -203,7 +199,7 @@ async def with_visit_stats(db: AsyncSession, clients, membership: models.Members
     ids = [c.id for c in clients]
     stats = {}
     if ids:
-        rows = await db.execute(_client_stats().where(models.Appointment.client_id.in_(ids)))
+        rows = await db.execute(_client_stats(ids))
         stats = {r.client_id: r for r in rows.all()}
     hide_money = membership is not None and membership.role == models.MembershipRole.master
     status_ids = {c.status_id for c in clients if c.status_id}
@@ -227,9 +223,7 @@ async def clients_summary(
     membership: CurrentMembership,
 ):
     """Сколько клиентов новые (0 визитов), вернувшиеся (1–2) и постоянные (3+). Клиенты в корзине не считаются."""
-    visits = _completed_visits().where(
-        models.Appointment.organization_id == membership.organization_id,
-    ).subquery()
+    visits = _completed_visits(membership.organization_id).subquery()
     count = func.coalesce(visits.c.visits, 0)
     row = (await db.execute(
         select(
@@ -683,13 +677,7 @@ async def anonymize_client(
             models.Appointment.client_id == client_id,
             models.Appointment.organization_id == org_id,
         )
-        .values(notes=None, guest_names=[])
-        .execution_options(synchronize_session=False),
-    )
-    await db.execute(  # открытые игры: адрес, оставленный при входе в игру
-        update(models.AppointmentParticipant)
-        .where(models.AppointmentParticipant.client_id == client_id)
-        .values(email=None)
+        .values(notes=None)
         .execution_options(synchronize_session=False),
     )
 
@@ -738,7 +726,8 @@ async def get_client_appointments(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ):
-    """История записей клиента. Порядок по времени начала: по умолчанию сначала новые (dir=desc)."""
+    """История записей клиента: и где он основной клиент, и где он один из остальных клиентов записи.
+    Порядок по времени начала: по умолчанию сначала новые (dir=desc)."""
     await get_owned_active(db, models.Client, client_id, membership.organization_id, "Client")
 
     query = (
@@ -749,7 +738,7 @@ async def get_client_appointments(
             selectinload(models.Appointment.master),
         )
         .where(
-            models.Appointment.client_id == client_id,
+            models.Appointment.id.in_(client_appointment_ids(client_id)),
             models.Appointment.organization_id == membership.organization_id,
             models.Appointment.deleted_at.is_(None),
         )

@@ -85,11 +85,6 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         select(models.ClientStatus).where(models.ClientStatus.organization_id == organization_id)
         .order_by(models.ClientStatus.position, models.ClientStatus.id),
     )).scalars().all()
-    participants = (await db.execute(
-        select(models.AppointmentParticipant)
-        .where(models.AppointmentParticipant.organization_id == organization_id)
-        .order_by(models.AppointmentParticipant.id),
-    )).scalars().all()
 
     return {
         "format_version": EXPORT_FORMAT_VERSION,
@@ -124,7 +119,7 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             {
                 "id": s.id, "name": s.name, "price": s.price, "duration_minutes": s.duration_minutes,
                 "description": s.description, "emoji": s.emoji, "photo": s.photo,
-                "max_party_size": s.max_party_size, "open_games": s.open_games, "translations": s.translations,
+                "max_party_size": s.max_party_size, "translations": s.translations,
                 "created_at": s.created_at, "deleted_at": s.deleted_at,
             }
             for s in services
@@ -167,8 +162,9 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
                 "id": a.id, "client_id": a.client_id, "service_id": a.service_id, "master_id": a.master_id,
                 "start_time": a.start_time, "end_time": a.end_time, "status": a.status,
                 "price": a.price, "currency": a.currency, "notes": a.notes, "party_size": a.party_size,
-                "guest_names": a.guest_names, "series_id": a.series_id, "open_capacity": a.open_capacity,
-                "auto_completed": a.auto_completed,
+                "series_id": a.series_id, "auto_completed": a.auto_completed,
+                # остальные клиенты записи и их части суммы
+                "participants": [{"client_id": p.client_id, "price": p.price} for p in a.participants],
                 "created_at": a.created_at, "deleted_at": a.deleted_at,
             }
             for a in appointments
@@ -176,14 +172,6 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
         "client_statuses": [
             {"id": s.id, "name": s.name, "color": s.color, "position": s.position, "created_at": s.created_at}
             for s in client_statuses
-        ],
-        "game_participants": [
-            {
-                "id": p.id, "appointment_id": p.appointment_id, "client_id": p.client_id, "party_size": p.party_size,
-                "price": p.price, "email": p.email, "language": p.language, "created_at": p.created_at,
-                "left_at": p.left_at,
-            }
-            for p in participants
         ],
         "waitlist": [
             {

@@ -143,12 +143,13 @@ def send_booking_reminder_email(
     service_name: str,
     master_name: str,
     start_time: datetime,
-    manage_token: str,
+    manage_token: str | None,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
     view: dict | None = None,
 ) -> None:
-    manage_url = _frontend_url(f"/booking/{manage_token}")
+    """manage_token=None — письмо другому клиенту той же записи: без ссылки управления записью."""
+    manage_url = _frontend_url(f"/booking/{manage_token}") if manage_token else None
     _send(
         to_email,
         email_subject("booking_reminder", language, organization_name=organization_name),
@@ -162,6 +163,7 @@ def send_booking_reminder_email(
             party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             manage_url=manage_url,
+            as_guest=manage_token is None,
         ),
     )
 
@@ -176,7 +178,9 @@ def send_booking_cancelled_email(
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
     view: dict | None = None,
+    as_guest: bool = False,
 ) -> None:
+    """as_guest: письмо другому клиенту той же записи (без «вы отменили» / «отменил салон»)."""
     _send(
         to_email,
         email_subject("booking_cancelled", language, organization_name=organization_name),
@@ -190,6 +194,7 @@ def send_booking_cancelled_email(
             party_size=party_size,
             when=start_time.strftime("%d.%m.%Y %H:%M"),
             by_salon=by_salon,
+            as_guest=as_guest,
         ),
     )
 
@@ -200,14 +205,15 @@ def send_booking_changed_email(
     service_name: str,
     master_name: str,
     start_time: datetime,
-    manage_token: str,
+    manage_token: str | None,
     old_start_time: datetime | None = None,
     by_salon: bool = False,
     language: str | None = DEFAULT_LANGUAGE,
     party_size: int = 1,
     view: dict | None = None,
 ) -> None:
-    manage_url = _frontend_url(f"/booking/{manage_token}")
+    """manage_token=None — письмо другому клиенту той же записи: без ссылки управления записью."""
+    manage_url = _frontend_url(f"/booking/{manage_token}") if manage_token else None
     _send(
         to_email,
         email_subject("booking_changed", language, organization_name=organization_name),
@@ -223,6 +229,7 @@ def send_booking_changed_email(
             old_when=old_start_time.strftime("%d.%m.%Y %H:%M") if old_start_time else None,
             manage_url=manage_url,
             by_salon=by_salon,
+            as_guest=manage_token is None,
         ),
     )
 
@@ -270,39 +277,3 @@ def send_waitlist_slot_free_email(
         ),
     )
 
-
-def send_game_email(
-    to_email: str,
-    kind: str,
-    organization_name: str,
-    service_name: str,
-    master_name: str,
-    start_time: datetime,
-    players: int,
-    capacity: int,
-    manage_url: str | None = None,
-    player_name: str | None = None,
-    language: str | None = DEFAULT_LANGUAGE,
-    view: dict | None = None,
-) -> None:
-    """Письма об открытой игре (game_notice.html). kind: joined, reminder, changed, cancelled, removed —
-    участнику; player_joined, player_left — организатору. manage_url: участнику «выйти из игры», организатору
-    страница игры."""
-    _send(
-        to_email,
-        email_subject("game_notice", language, organization_name=organization_name, kind=kind),
-        render_email(
-            "game_notice.html",
-            language,
-            **(view or {}),
-            kind=kind,
-            organization_name=organization_name,
-            service_name=service_name,
-            master_name=master_name,
-            when=start_time.strftime("%d.%m.%Y %H:%M"),
-            players=players,
-            capacity=capacity,
-            manage_url=manage_url,
-            player_name=player_name,
-        ),
-    )

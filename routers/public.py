@@ -241,8 +241,6 @@ async def public_create_booking(
         end_time=end_time,
         notes=booking.notes,
         booked_online=True,
-        party_size=booking.party_size,
-        guest_names=booking.guest_names,
     )
 
     await log_activity(
@@ -369,7 +367,5 @@ async def _opening_hours(db: AsyncSession, organization_id: int) -> list[Opening
 
 # управление записью по ссылке из письма (/public/booking/...)
 from routers.public_booking import router as _manage_router  # noqa: E402
-from routers.public_games import router as _games_router  # noqa: E402
 
 router.include_router(_manage_router)
-router.include_router(_games_router)  # открытые игры: /public/{slug}/games..., /public/participation/...

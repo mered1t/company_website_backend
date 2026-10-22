@@ -238,6 +238,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_when": "Date and time",
             "button": "Manage appointment",
             "footer": "Can't make it? Please reschedule or cancel using the button above so someone else can take the slot.",
+            "footer_guest": "Can't make it? Please let the salon know so someone else can take the slot.",
             "fallback": "If the button doesn't work, copy this link:",
         },
         "pl": {
@@ -250,6 +251,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_when": "Data i godzina",
             "button": "Zarządzaj wizytą",
             "footer": "Nie możesz przyjść? Przełóż lub odwołaj wizytę przyciskiem powyżej, aby ktoś inny mógł skorzystać z tego terminu.",
+            "footer_guest": "Nie możesz przyjść? Daj znać salonowi, aby ktoś inny mógł skorzystać z tego terminu.",
             "fallback": "Jeśli przycisk nie działa, skopiuj link:",
         },
         "es": {
@@ -262,6 +264,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_when": "Fecha y hora",
             "button": "Gestionar cita",
             "footer": "¿No puedes venir? Reprograma o cancela tu cita con el botón de arriba para que otra persona pueda usar ese horario.",
+            "footer_guest": "¿No puedes venir? Avisa al salón para que otra persona pueda usar ese horario.",
             "fallback": "Si el botón no funciona, copia este enlace:",
         },
         "uk": {
@@ -274,6 +277,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_when": "Дата й час",
             "button": "Керувати записом",
             "footer": "Не можете прийти? Перенесіть або скасуйте запис кнопкою вище, щоб цей час міг зайняти хтось інший.",
+            "footer_guest": "Не можете прийти? Повідомте салон, щоб цей час міг зайняти хтось інший.",
             "fallback": "Якщо кнопка не працює, скопіюйте посилання:",
         },
         "sq": {
@@ -286,6 +290,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_when": "Data dhe ora",
             "button": "Menaxho takimin",
             "footer": "Nuk mund të vish? Shtyje ose anuloje takimin me butonin më sipër, që termini t'i shkojë dikujt tjetër.",
+            "footer_guest": "Nuk mund të vish? Njofto sallonin, që termini t'i shkojë dikujt tjetër.",
             "fallback": "Nëse butoni nuk funksionon, kopjo lidhjen:",
         },
     },
@@ -295,6 +300,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Appointment cancelled",
             "body_client": "You cancelled your appointment at <b>{organization_name}</b>. Here is what was cancelled:",
             "body_salon": "Your appointment at <b>{organization_name}</b> was cancelled by the salon. We are sorry for the inconvenience. Here is what was cancelled:",
+            "body_guest": "Your appointment at <b>{organization_name}</b> was cancelled. Here is what was cancelled:",
             "label_service": "Service",
             "label_master": "Specialist",
             "label_people": "People",
@@ -306,6 +312,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Wizyta odwołana",
             "body_client": "Twoja wizyta w <b>{organization_name}</b> została odwołana na Twoją prośbę. Oto, co zostało odwołane:",
             "body_salon": "Twoja wizyta w <b>{organization_name}</b> została odwołana przez salon. Przepraszamy za niedogodności. Oto, co zostało odwołane:",
+            "body_guest": "Twoja wizyta w <b>{organization_name}</b> została odwołana. Oto, co zostało odwołane:",
             "label_service": "Usługa",
             "label_master": "Specjalista",
             "label_people": "Liczba osób",
@@ -317,6 +324,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Cita cancelada",
             "body_client": "Has cancelado tu cita en <b>{organization_name}</b>. Esto es lo que se canceló:",
             "body_salon": "Tu cita en <b>{organization_name}</b> ha sido cancelada por el salón. Lamentamos las molestias. Esto es lo que se canceló:",
+            "body_guest": "Tu cita en <b>{organization_name}</b> ha sido cancelada. Esto es lo que se canceló:",
             "label_service": "Servicio",
             "label_master": "Profesional",
             "label_people": "Personas",
@@ -328,6 +336,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Запис скасовано",
             "body_client": "Ви скасували свій запис у <b>{organization_name}</b>. Ось що було скасовано:",
             "body_salon": "Ваш запис у <b>{organization_name}</b> скасовано салоном. Перепрошуємо за незручності. Ось що було скасовано:",
+            "body_guest": "Ваш запис у <b>{organization_name}</b> скасовано. Ось що було скасовано:",
             "label_service": "Послуга",
             "label_master": "Майстер",
             "label_people": "Кількість людей",
@@ -339,6 +348,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Takimi u anulua",
             "body_client": "Ti anulove takimin tënd te <b>{organization_name}</b>. Ja çfarë u anulua:",
             "body_salon": "Takimi yt te <b>{organization_name}</b> u anulua nga salloni. Na vjen keq për shqetësimin. Ja çfarë u anulua:",
+            "body_guest": "Takimi yt te <b>{organization_name}</b> u anulua. Ja çfarë u anulua:",
             "label_service": "Shërbimi",
             "label_master": "Specialisti",
             "label_people": "Numri i personave",
@@ -352,6 +362,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Appointment changed",
             "body_client": "Your appointment at <b>{organization_name}</b> has been rescheduled. New details:",
             "body_salon": "The salon has changed your appointment at <b>{organization_name}</b>. New details:",
+            "body_guest": "Your appointment at <b>{organization_name}</b> has been changed. New details:",
             "label_service": "Service",
             "label_master": "Specialist",
             "label_people": "People",
@@ -359,6 +370,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_old_when": "Previous date and time",
             "button": "Manage appointment",
             "footer": "Doesn't suit you? Use the button above to reschedule or cancel your appointment.",
+            "footer_guest": "Doesn't suit you? Please contact the salon.",
             "fallback": "If the button doesn't work, copy this link:",
         },
         "pl": {
@@ -366,6 +378,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Wizyta zmieniona",
             "body_client": "Twoja wizyta w <b>{organization_name}</b> została przełożona. Nowe szczegóły:",
             "body_salon": "Salon zmienił Twoją wizytę w <b>{organization_name}</b>. Nowe szczegóły:",
+            "body_guest": "Twoja wizyta w <b>{organization_name}</b> została zmieniona. Nowe szczegóły:",
             "label_service": "Usługa",
             "label_master": "Specjalista",
             "label_people": "Liczba osób",
@@ -373,6 +386,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_old_when": "Poprzednia data i godzina",
             "button": "Zarządzaj wizytą",
             "footer": "Ten termin Ci nie odpowiada? Użyj przycisku powyżej, aby przełożyć lub odwołać wizytę.",
+            "footer_guest": "Ten termin Ci nie odpowiada? Skontaktuj się z salonem.",
             "fallback": "Jeśli przycisk nie działa, skopiuj link:",
         },
         "es": {
@@ -380,6 +394,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Cita modificada",
             "body_client": "Tu cita en <b>{organization_name}</b> ha sido reprogramada. Nuevos datos:",
             "body_salon": "El salón ha modificado tu cita en <b>{organization_name}</b>. Nuevos datos:",
+            "body_guest": "Tu cita en <b>{organization_name}</b> ha cambiado. Nuevos datos:",
             "label_service": "Servicio",
             "label_master": "Profesional",
             "label_people": "Personas",
@@ -387,6 +402,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_old_when": "Fecha y hora anteriores",
             "button": "Gestionar cita",
             "footer": "¿No te viene bien? Usa el botón de arriba para reprogramar o cancelar tu cita.",
+            "footer_guest": "¿No te viene bien? Ponte en contacto con el salón.",
             "fallback": "Si el botón no funciona, copia este enlace:",
         },
         "uk": {
@@ -394,6 +410,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Запис змінено",
             "body_client": "Ваш запис у <b>{organization_name}</b> перенесено. Нові дані:",
             "body_salon": "Салон змінив ваш запис у <b>{organization_name}</b>. Нові дані:",
+            "body_guest": "Ваш запис у <b>{organization_name}</b> змінено. Нові дані:",
             "label_service": "Послуга",
             "label_master": "Майстер",
             "label_people": "Кількість людей",
@@ -401,6 +418,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_old_when": "Попередні дата й час",
             "button": "Керувати записом",
             "footer": "Не підходить? Скористайтеся кнопкою вище, щоб перенести або скасувати запис.",
+            "footer_guest": "Не підходить? Зверніться до салону.",
             "fallback": "Якщо кнопка не працює, скопіюйте посилання:",
         },
         "sq": {
@@ -408,6 +426,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "heading": "Takimi u ndryshua",
             "body_client": "Takimi yt te <b>{organization_name}</b> u shty. Detajet e reja:",
             "body_salon": "Salloni e ndryshoi takimin tënd te <b>{organization_name}</b>. Detajet e reja:",
+            "body_guest": "Takimi yt te <b>{organization_name}</b> u ndryshua. Detajet e reja:",
             "label_service": "Shërbimi",
             "label_master": "Specialisti",
             "label_people": "Numri i personave",
@@ -415,6 +434,7 @@ EMAIL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
             "label_old_when": "Data dhe ora e mëparshme",
             "button": "Menaxho takimin",
             "footer": "Nuk të përshtatet? Përdor butonin më sipër për ta shtyrë ose anuluar takimin.",
+            "footer_guest": "Nuk të përshtatet? Të lutem kontakto sallonin.",
             "fallback": "Nëse butoni nuk funksionon, kopjo lidhjen:",
         },
     },
@@ -747,13 +767,8 @@ MONTHS_SHORT: dict[str, tuple[str, ...]] = {
     "sq": ("JAN", "SHK", "MAR", "PRI", "MAJ", "QER", "KOR", "GUS", "SHT", "TET", "NËN", "DHJ"),
 }
 
-# открытые игры: свои письма
-from services.i18n_games import GAME_STRINGS  # noqa: E402
-
-EMAIL_STRINGS["game_notice"] = GAME_STRINGS
-
 BOOKING_TEMPLATES = ("booking_confirmation", "booking_reminder", "booking_changed", "booking_cancelled",
-                     "waitlist_slot_free", "game_notice")
+                     "waitlist_slot_free")
 
 
 class _KeepUnknown(dict):
@@ -772,7 +787,7 @@ def email_texts(template_key: str, language: str | None, *, app_name: str, organ
     return {key: Markup(value).format_map(values) for key, value in strings.items()}
 
 
-def email_subject(template_key: str, language: str | None, *, organization_name: str = "", kind: str = "") -> str:
-    """Тема письма (обычный текст, без HTML). kind — вид письма об открытой игре (ключ <kind>_subject)."""
-    raw = EMAIL_STRINGS[template_key][normalize_language(language)][f"{kind}_subject" if kind else "subject"]
+def email_subject(template_key: str, language: str | None, *, organization_name: str = "") -> str:
+    """Тема письма (обычный текст, без HTML)."""
+    raw = EMAIL_STRINGS[template_key][normalize_language(language)]["subject"]
     return raw.format(organization_name=organization_name)

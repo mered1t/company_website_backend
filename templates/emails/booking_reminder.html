@@ -22,11 +22,13 @@
 <div style="height:24px;"></div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
 {%- if calendar_url %}{{ ui.button(calendar_url, t.add_calendar) }}{% elif google_calendar_url %}{{ ui.button(google_calendar_url, t.add_calendar) }}{% endif %}
+{%- if manage_url %}
 {{ ui.button(manage_url, t.reschedule if (calendar_url or google_calendar_url) else t.button, "secondary" if (calendar_url or google_calendar_url) else "primary") }}
 {{ ui.button(manage_url, t.cant_make_it, "ghost") }}
+{%- endif %}
 </td></tr></table>
-{{ ui.para(t.footer, center=true, size=13, color="#8A8DA6", top=8) }}
-{%- if cancel_hours %}{{ ui.para(t.free_cancel.replace("{hours}", cancel_hours|string), center=true, size=13, color="#8A8DA6", top=6) }}{% endif %}
+{{ ui.para(t.footer_guest if as_guest else t.footer, center=true, size=13, color="#8A8DA6", top=8) }}
+{%- if cancel_hours and not as_guest %}{{ ui.para(t.free_cancel.replace("{hours}", cancel_hours|string), center=true, size=13, color="#8A8DA6", top=6) }}{% endif %}
 {%- if salon_address or salon_phone %}<div style="height:24px;"></div>{{ ui.salon_contacts(t, salon_address, salon_phone, maps_url) }}{% endif %}
-{{ ui.fallback(t.fallback, manage_url) }}
+{%- if manage_url %}{{ ui.fallback(t.fallback, manage_url) }}{% endif %}
 {% endblock %}
