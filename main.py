@@ -122,7 +122,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID", "X-Total-Count"],  # чтобы фронтенд мог показать номер запроса в сообщении об ошибке
+    # фронтенд читает: номер запроса для сообщения об ошибке, число записей, лимит автоперевода
+    # и через сколько секунд он снова доступен
+    expose_headers=["X-Request-ID", "X-Total-Count", "X-RateLimit-Limit", "X-RateLimit-Remaining",
+                    "Retry-After"],
 )
 # Добавляется последним, поэтому обрабатывает запрос первым: номер есть даже у ответов CORS
 app.add_middleware(RequestIdMiddleware)

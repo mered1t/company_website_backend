@@ -180,8 +180,10 @@ HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
 
 
 class ClientStatusBrief(BaseModel):
-    """Статус в ответе о клиенте."""
+    """Статус в ответе о клиенте. code — ключ стартового статуса (new, regular, vip, one_time, sleeping, lost,
+    buffer): фронт переводит по нему; null — свой или переименованный статус, показывать name."""
     id: int
+    code: str | None = None
     name: str
     color: str | None
 

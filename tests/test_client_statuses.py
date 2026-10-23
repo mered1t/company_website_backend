@@ -68,7 +68,7 @@ async def test_status_on_client_filter_and_sort(api, org_a):
     statuses = await _statuses(api, org_a)
     new, regular, vip = statuses[0]["id"], statuses[1]["id"], statuses[2]["id"]
     anna = await _client(api, org_a, "Anna", "+380670001101", status_id=vip)
-    assert anna["status"] == {"id": vip, "name": statuses[2]["name"], "color": statuses[2]["color"]}
+    assert anna["status"] == {"id": vip, "code": "vip", "name": statuses[2]["name"], "color": statuses[2]["color"]}
     bob = await _client(api, org_a, "Bob", "+380670001102", status_id=regular)
     carl = await _client(api, org_a, "Carl", "+380670001103")
     assert carl["status"] is None and carl["status_id"] is None

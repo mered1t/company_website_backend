@@ -170,7 +170,8 @@ async def build_export(db: AsyncSession, organization_id: int) -> dict:
             for a in appointments
         ],
         "client_statuses": [
-            {"id": s.id, "name": s.name, "color": s.color, "position": s.position, "created_at": s.created_at}
+            {"id": s.id, "code": s.code, "name": s.name, "color": s.color, "position": s.position,
+             "created_at": s.created_at}
             for s in client_statuses
         ],
         "waitlist": [

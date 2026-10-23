@@ -165,31 +165,25 @@ async def list_my_organizations(
         .join(models.Membership, models.Membership.organization_id == models.Organization.id)
         .where(models.Membership.user_id == current_user.id),
     )
-    rows = result.all()
+    return [_with_role(org, role, master_id) for org, role, master_id in result.all()]
 
-    return [
-        OrganizationWithRole(
-            id=org.id,
-            name=org.name,
-            slug=org.slug,
-            created_at=org.created_at,
-            timezone=org.timezone,
-            booking_horizon_days=org.booking_horizon_days,
-            currency=org.currency,
-            plan=org.plan,
-            staff_booking_reminders=org.staff_booking_reminders,
-            client_email_language=org.client_email_language,
-            address=org.address,
-            phone=org.phone,
-            logo_url=org.logo_url,
-            description=org.description,
-            privacy_policy_url=org.privacy_policy_url,
-            subscription=SubscriptionInfo.from_org(org),
-            role=role.value,
-            master_id=master_id,
-        )
-        for org, role, master_id in rows
-    ]
+
+def _with_role(org: models.Organization, role, master_id: int | None) -> OrganizationWithRole:
+    """Все поля организации берутся из OrganizationPublic: новое поле не потеряется в списке
+    (раньше список собирался вручную и не отдавал group_bookings, business_type, auto_complete)."""
+    return OrganizationWithRole(
+        **OrganizationPublic.model_validate(org).model_dump(),
+        subscription=SubscriptionInfo.from_org(org),
+        role=role.value,
+        master_id=master_id,
+    )
+
+
+@router.get("/{organization_id}", response_model=OrganizationWithRole)
+async def get_my_organization(organization_id: int, membership: AnyStatusMembership):
+    """Один салон (то же, что элемент списка GET /organizations), например чтобы обновить настройки после правки.
+    Как и список, работает и у закрытого салона: по subscription фронт покажет экран оплаты."""
+    return _with_role(membership.organization, membership.role, membership.master_id)
 
 
 @router.get("/{organization_id}/subscription", response_model=SubscriptionInfo)

@@ -18,7 +18,8 @@ ORG_TABLES = {
     "activity_logs", "ai_reports", "notifications", "ai_chat_messages", "waitlist_entries",
     "appointment_participants", "client_statuses",
 }
-GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments"}
+GLOBAL_TABLES = {"users", "password_reset_tokens", "refresh_tokens", "email_verification_tokens", "payments",
+                 "translation_cache"}  # кэш переводов: только тексты услуг, общий для всех салонов
 
 
 def test_every_table_is_classified():

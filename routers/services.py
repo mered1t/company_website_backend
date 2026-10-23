@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +10,9 @@ from auth.auth import ManagerMembership, OwnerMembership
 from db.database import get_db
 from schemas.schemas import (ServiceCreate, ServicePublic, ServiceTranslateRequest, ServiceTranslateResult,
                              ServiceUpdate)
-from core.rate_limiter import limiter
-from services.translations import draft_translations
+from services.i18n import SUPPORTED_LANGUAGES
+from services.translations import (TRANSLATE_LIMIT, cached_translations, draft_translations, quota, source_hash,
+                                   spend_quota, store_translations)
 
 from services.common import (get_owned, only_changed, changed_fields_details,
                              log_activity,
@@ -55,17 +56,35 @@ async def create_service(
 
 
 @router.post("/translate", response_model=ServiceTranslateResult)
-@limiter.limit("30/hour")
 async def translate_service(
-    request: Request,
     body: ServiceTranslateRequest,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
     membership: ManagerMembership,
 ):
     """Черновик переводов названия и описания через ИИ. Ничего не сохраняет: форма услуги показывает переводы,
-    салон правит и сохраняет их обычным POST/PATCH услуги (поле translations)."""
-    translations = await draft_translations(body.name, body.description, body.source_language,
-                                            body.target_languages)
-    return ServiceTranslateResult(translations=translations)
+    салон правит и сохраняет их обычным POST/PATCH услуги (поле translations).
+
+    Переводятся только target_languages (без исходного языка). Что уже есть в общем кэше, в ИИ не уходит.
+    Лимит — 30 обращений к ИИ в час на салон; ответ целиком из кэша лимит не тратит.
+    Заголовки: X-RateLimit-Limit, X-RateLimit-Remaining; при 429 — ещё Retry-After (секунды).
+    """
+    org_id = membership.organization_id
+    targets = [lang for lang in dict.fromkeys(body.target_languages or SUPPORTED_LANGUAGES)
+               if lang != body.source_language]
+    key = source_hash(body.name, body.description)
+    found = await cached_translations(db, key, targets) if targets else {}
+    missing = [lang for lang in targets if lang not in found]
+    if missing:
+        spend_quota(org_id)
+        fresh = await draft_translations(body.name, body.description, body.source_language, missing)
+        await store_translations(db, key, fresh)
+        await db.commit()
+        found.update(fresh)
+    remaining, _ = quota(org_id)
+    response.headers["X-RateLimit-Limit"] = str(TRANSLATE_LIMIT.amount)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    return ServiceTranslateResult(translations={lang: found[lang] for lang in targets if lang in found})
 
 
 @router.get("", response_model=list[ServicePublic])

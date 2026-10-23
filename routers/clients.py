@@ -205,8 +205,9 @@ async def with_visit_stats(db: AsyncSession, clients, membership: models.Members
     status_ids = {c.status_id for c in clients if c.status_id}
     statuses = {}
     if status_ids:
-        statuses = {s.id: ClientStatusBrief(id=s.id, name=s.name, color=s.color) for s in (await db.execute(
-            select(models.ClientStatus).where(models.ClientStatus.id.in_(status_ids)))).scalars().all()}
+        status_rows = (await db.execute(
+            select(models.ClientStatus).where(models.ClientStatus.id.in_(status_ids)))).scalars().all()
+        statuses = {s.id: ClientStatusBrief(id=s.id, code=s.code, name=s.name, color=s.color) for s in status_rows}
     for client in clients:
         client.status = statuses.get(client.status_id)
         row = stats.get(client.id)

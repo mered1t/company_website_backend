@@ -15,3 +15,4 @@ from models.ai_chat import AiChatMessage  # noqa: F401  (счётчик ИИ-ч�
 from models.models import WaitlistEntry  # noqa: F401  (лист ожидания)
 from models.models import AppointmentParticipant  # noqa: F401  (ещё клиенты в записи)
 from models.models import ClientStatus  # noqa: F401  (статусы клиентов)
+from models.models import TranslationCache  # noqa: F401  (кэш автопереводов услуг)

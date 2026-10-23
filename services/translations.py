@@ -1,10 +1,27 @@
-"""Переводы услуг: показ на языке посетителя и черновик перевода через ИИ."""
+"""Переводы услуг: показ на языке посетителя и черновик перевода через ИИ.
+
+Черновик перевода стоит денег, поэтому:
+  * переводятся только запрошенные языки (target_languages);
+  * готовые переводы кэшируются (translation_cache, общий для всех салонов): одинаковый текст в ИИ не уходит;
+  * лимит — 30 обращений к ИИ в час на салон; ответ целиком из кэша лимит не тратит.
+"""
+import hashlib
 import json
+import math
+import time
 
 from fastapi import HTTPException
+from limits import parse
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
+import models
 from core.config import settings
+from core.rate_limiter import limiter
 from services.i18n import SUPPORTED_LANGUAGES
+
+TRANSLATE_LIMIT = parse("30/hour")  # обращений к ИИ на один салон
 
 LANGUAGE_NAMES = {"en": "English", "pl": "Polish", "es": "Spanish", "uk": "Ukrainian", "sq": "Albanian"}
 
@@ -63,3 +80,53 @@ async def draft_translations(name: str, description: str | None, source: str | N
             result[lang] = {"name": item["name"].strip()[:150],
                             "description": desc.strip()[:2000] if isinstance(desc, str) and desc.strip() else None}
     return result
+
+
+# ------------------------------------------------------------------ кэш и лимит
+def _normalize(text: str | None) -> str:
+    return " ".join((text or "").split())
+
+
+def source_hash(name: str, description: str | None) -> str:
+    """Ключ кэша: тот же текст с другими пробелами — тот же ключ. Регистр важен («стрижка» и «Стрижка» разные)."""
+    return hashlib.sha256(f"{_normalize(name)}\x00{_normalize(description)}".encode()).hexdigest()
+
+
+async def cached_translations(db: AsyncSession, key: str, languages: list[str]) -> dict:
+    rows = (await db.execute(
+        select(models.TranslationCache)
+        .where(models.TranslationCache.source_hash == key, models.TranslationCache.language.in_(languages)),
+    )).scalars().all()
+    return {r.language: {"name": r.name, "description": r.description} for r in rows}
+
+
+async def store_translations(db: AsyncSession, key: str, translations: dict) -> None:
+    """Сохраняет новые переводы в кэш (без коммита). Если такой уже есть (параллельный запрос), он остаётся."""
+    if not translations:
+        return
+    await db.execute(
+        insert(models.TranslationCache)
+        .values([{"source_hash": key, "language": lang, "name": t["name"], "description": t["description"]}
+                 for lang, t in translations.items()])
+        .on_conflict_do_nothing(constraint="uq_translation_cache_source_language"),
+    )
+
+
+def quota(organization_id: int) -> tuple[int, int]:
+    """(сколько обращений к ИИ осталось в этом часе, через сколько секунд счётчик обнулится)."""
+    reset_at, remaining = limiter.limiter.get_window_stats(TRANSLATE_LIMIT, "translate", str(organization_id))
+    return remaining, max(math.ceil(reset_at - time.time()), 1)
+
+
+def spend_quota(organization_id: int) -> None:
+    """Списывает одно обращение к ИИ. Лимит исчерпан — 429 с Retry-After."""
+    if not limiter.enabled:
+        return
+    if not limiter.limiter.hit(TRANSLATE_LIMIT, "translate", str(organization_id)):
+        _, retry_after = quota(organization_id)
+        raise HTTPException(
+            status_code=429,
+            detail="Translation limit reached: 30 AI translations per hour. Please try again later.",
+            headers={"Retry-After": str(retry_after), "X-RateLimit-Limit": str(TRANSLATE_LIMIT.amount),
+                     "X-RateLimit-Remaining": "0"},
+        )

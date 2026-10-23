@@ -6,7 +6,10 @@ from services.i18n import normalize_language
 
 MAX_STATUSES = 30  # статусов в одном салоне
 
-# порядок = порядок в списках; цвета — спокойные, читаются и в светлой, и в тёмной теме
+# порядок = порядок в списках; цвета — спокойные, читаются и в светлой, и в тёмной теме.
+# code — постоянный ключ стартового статуса: по нему фронт показывает название на языке интерфейса.
+# Салон переименовал статус — code становится null, дальше показывается его собственное название.
+DEFAULT_CODES = ("new", "regular", "vip", "one_time", "sleeping", "lost", "buffer")
 DEFAULT_COLORS = ("#4C8DF6", "#2FA36B", "#C99A2E", "#8E8AA8", "#7A6FD6", "#D2555A", "#9AA0A6")
 DEFAULT_NAMES: dict[str, tuple[str, ...]] = {
     "en": ("New", "Regular", "VIP", "One-time", "Sleeping", "Lost", "Buffer"),
@@ -20,8 +23,8 @@ DEFAULT_NAMES: dict[str, tuple[str, ...]] = {
 def default_statuses(organization_id: int, language: str | None) -> list[models.ClientStatus]:
     names = DEFAULT_NAMES[normalize_language(language)]
     return [
-        models.ClientStatus(organization_id=organization_id, name=name, color=color, position=i)
-        for i, (name, color) in enumerate(zip(names, DEFAULT_COLORS))
+        models.ClientStatus(organization_id=organization_id, code=code, name=name, color=color, position=i)
+        for i, (code, name, color) in enumerate(zip(DEFAULT_CODES, names, DEFAULT_COLORS))
     ]
 
 

@@ -544,6 +544,23 @@ class ClientStatus(Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True,
     )
     name: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ключ стартового статуса (new, regular, vip, ...) для перевода на фронте; свой или переименованный — None
+    code: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
     color: Mapped[str | None] = mapped_column(String(7), nullable=True, default=None)  # #RRGGBB
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # порядок в списках и сортировке
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+
+class TranslationCache(Base):
+    """Готовые переводы названий и описаний услуг, общие для всех салонов: одинаковый текст («Стрижка»)
+    не отправляется в ИИ второй раз. Ключ — хеш исходного текста (name + description, пробелы схлопнуты) и язык.
+    Персональных данных здесь нет: только тексты услуг."""
+    __tablename__ = "translation_cache"
+    __table_args__ = (UniqueConstraint("source_hash", "language", name="uq_translation_cache_source_language"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    language: Mapped[str] = mapped_column(String(5), nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)

@@ -52,7 +52,7 @@ async def _public(db: AsyncSession, organization_id: int, rows: list[models.Clie
                models.Client.status_id.is_not(None))
         .group_by(models.Client.status_id),
     )).all())
-    return [ClientStatusPublic(id=r.id, name=r.name, color=r.color, position=r.position,
+    return [ClientStatusPublic(id=r.id, code=r.code, name=r.name, color=r.color, position=r.position,
                                clients_count=counts.get(r.id, 0)) for r in rows]
 
 
@@ -92,6 +92,7 @@ async def update_client_status(
     data = only_changed(row, body.model_dump(exclude_unset=True))
     if "name" in data:
         await _check_name_free(db, org_id, data["name"], exclude_id=row.id)
+        row.code = None  # салон назвал статус по-своему: переводить по коду больше не нужно
     for field, value in data.items():
         setattr(row, field, value)
     if data:
