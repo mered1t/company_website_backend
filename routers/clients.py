@@ -1,13 +1,15 @@
 import csv
 import io
 import re
+from datetime import date, datetime, time, timedelta
 from itertools import islice
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
-from sqlalchemy import select, update, delete, or_, and_, func
+from sqlalchemy import select, update, delete, or_, and_, func, extract, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
@@ -84,11 +86,98 @@ async def _check_status(db: AsyncSession, organization_id: int, status_id: int) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown client status")
 
 
+def _local_day_start_utc(day: date, tz_name: str) -> datetime:
+    """Начало дня по часам салона, переведённое в UTC (created_at хранится в UTC без пояса)."""
+    local = datetime.combine(day, time.min).replace(tzinfo=ZoneInfo(tz_name))
+    return local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
+class ClientFilters:
+    """Фильтры списка клиентов. Все работают вместе (условие «И») и вместе с q и status_id.
+    Визиты считаются, как в карточке клиента: выполненные, и как основной клиент, и в чужой записи."""
+
+    def __init__(
+        self,
+        visits_min: int | None = Query(default=None, ge=0, le=100_000, description="выполненных визитов не меньше"),
+        visits_max: int | None = Query(default=None, ge=0, le=100_000, description="выполненных визитов не больше"),
+        last_visit_before: date | None = Query(
+            default=None, description="последний выполненный визит раньше этой даты (клиенты без визитов не входят)"),
+        last_visit_after: date | None = Query(
+            default=None, description="последний выполненный визит в эту дату или позже"),
+        never_visited: bool | None = Query(
+            default=None, description="true — ни одного выполненного визита; false — хотя бы один"),
+        no_shows_min: int | None = Query(default=None, ge=0, le=100_000, description="неявок не меньше"),
+        has_email: bool | None = Query(default=None, description="true — есть email; false — нет"),
+        birthday_month: int | None = Query(default=None, ge=1, le=12, description="месяц дня рождения"),
+        created_after: date | None = Query(default=None, description="добавлен в эту дату или позже"),
+        created_before: date | None = Query(default=None, description="добавлен в эту дату или раньше"),
+    ):
+        if visits_min is not None and visits_max is not None and visits_min > visits_max:
+            raise HTTPException(status_code=422, detail="visits_min cannot be greater than visits_max")
+        if created_after and created_before and created_after > created_before:
+            raise HTTPException(status_code=422, detail="created_after cannot be later than created_before")
+        if last_visit_after and last_visit_before and last_visit_after >= last_visit_before:
+            raise HTTPException(status_code=422, detail="last_visit_after must be earlier than last_visit_before")
+        self.visits_min, self.visits_max, self.never_visited = visits_min, visits_max, never_visited
+        self.last_visit_before, self.last_visit_after = last_visit_before, last_visit_after
+        self.no_shows_min = no_shows_min
+        self.has_email, self.birthday_month = has_email, birthday_month
+        self.created_after, self.created_before = created_after, created_before
+
+    def _needs_visits(self) -> bool:
+        return any(v is not None for v in (self.visits_min, self.visits_max, self.last_visit_before,
+                                           self.last_visit_after, self.never_visited, self.no_shows_min))
+
+    def apply(self, query, organization_id: int, tz_name: str):
+        if self._needs_visits():
+            people = person_appointments()
+            done = people.c.status == AppointmentStatus.completed
+            stats = (
+                select(
+                    people.c.client_id.label("client_id"),
+                    func.count(people.c.appointment_id).filter(done).label("visits"),
+                    func.max(people.c.start_time).filter(done).label("last_visit"),
+                    func.count(people.c.appointment_id).filter(
+                        people.c.status == AppointmentStatus.no_show).label("no_shows"),
+                )
+                .where(people.c.organization_id == organization_id, people.c.deleted_at.is_(None))
+                .group_by(people.c.client_id)
+                .subquery("client_visit_stats")
+            )
+            query = query.outerjoin(stats, stats.c.client_id == models.Client.id)
+            visits = func.coalesce(stats.c.visits, 0)
+            if self.visits_min is not None:
+                query = query.where(visits >= self.visits_min)
+            if self.visits_max is not None:
+                query = query.where(visits <= self.visits_max)
+            if self.never_visited is not None:
+                query = query.where(visits == 0 if self.never_visited else visits > 0)
+            # start_time — местное время салона: границы дня берём как есть
+            if self.last_visit_before is not None:
+                query = query.where(stats.c.last_visit < datetime.combine(self.last_visit_before, time.min))
+            if self.last_visit_after is not None:
+                query = query.where(stats.c.last_visit >= datetime.combine(self.last_visit_after, time.min))
+            if self.no_shows_min is not None:
+                query = query.where(func.coalesce(stats.c.no_shows, 0) >= self.no_shows_min)
+        if self.has_email is not None:
+            with_email = and_(models.Client.email.is_not(None), models.Client.email != "")
+            query = query.where(with_email if self.has_email else not_(with_email))
+        if self.birthday_month is not None:
+            query = query.where(extract("month", models.Client.birth_date) == self.birthday_month)
+        if self.created_after is not None:
+            query = query.where(models.Client.created_at >= _local_day_start_utc(self.created_after, tz_name))
+        if self.created_before is not None:
+            next_day = self.created_before + timedelta(days=1)
+            query = query.where(models.Client.created_at < _local_day_start_utc(next_day, tz_name))
+        return query
+
+
 @router.get("", response_model=list[ClientPublic])
 async def list_clients(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     membership: CurrentMembership,
+    filters: Annotated[ClientFilters, Depends()],
     q: str | None = Query(default=None, max_length=100),
     status_id: list[int] | None = Query(
         default=None, max_length=30,
@@ -117,6 +206,7 @@ async def list_clients(
             conditions.append(models.Client.status_id.is_(None))
         query = query.where(or_(*conditions))
 
+    query = filters.apply(query, membership.organization_id, membership.organization.timezone or "UTC")
     await set_total_count(response, db, query)
 
     if sort == "status":
